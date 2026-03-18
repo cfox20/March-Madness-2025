@@ -1,0 +1,141 @@
+Tournament,team_id,Team,region,round_name,round_order,appearances,total_brackets,round_probability
+M,1103,Y12,Y,Round of 32,2,2,10,0.2
+M,1103,Y12,Y,Round of 64,1,2,10,0.2
+M,1104,Y04,Y,Round of 32,2,2,10,0.2
+M,1104,Y04,Y,Round of 64,1,8,10,0.8
+M,1104,Y04,Y,Sweet 16,3,1,10,0.1
+M,1112,Z01,Z,Champion,6,2,10,0.2
+M,1112,Z01,Z,Elite Eight,4,4,10,0.4
+M,1112,Z01,Z,Final Four,5,2,10,0.2
+M,1112,Z01,Z,Round of 32,2,8,10,0.8
+M,1112,Z01,Z,Round of 64,1,9,10,0.9
+M,1112,Z01,Z,Sweet 16,3,5,10,0.5
+M,1116,Z04,Z,Elite Eight,4,3,10,0.3
+M,1116,Z04,Z,Round of 32,2,6,10,0.6
+M,1116,Z04,Z,Round of 64,1,10,10,1
+M,1116,Z04,Z,Sweet 16,3,3,10,0.3
+M,1140,Z06,Z,Round of 32,2,3,10,0.3
+M,1140,Z06,Z,Round of 64,1,8,10,0.8
+M,1140,Z06,Z,Sweet 16,3,2,10,0.2
+M,1155,X08,X,Round of 64,1,4,10,0.4
+M,1163,W02,W,Round of 32,2,5,10,0.5
+M,1163,W02,W,Round of 64,1,9,10,0.9
+M,1163,W02,W,Sweet 16,3,2,10,0.2
+M,1181,W01,W,Champion,6,6,10,0.6
+M,1181,W01,W,Elite Eight,4,9,10,0.9
+M,1181,W01,W,Final Four,5,8,10,0.8
+M,1181,W01,W,Round of 32,2,9,10,0.9
+M,1181,W01,W,Round of 64,1,10,10,1
+M,1181,W01,W,Sweet 16,3,9,10,0.9
+M,1196,X01,X,Elite Eight,4,2,10,0.2
+M,1196,X01,X,Round of 32,2,9,10,0.9
+M,1196,X01,X,Round of 64,1,10,10,1
+M,1196,X01,X,Sweet 16,3,5,10,0.5
+M,1202,W15,W,Round of 64,1,1,10,0.1
+M,1208,Y08,Y,Round of 32,2,1,10,0.1
+M,1208,Y08,Y,Round of 64,1,4,10,0.4
+M,1211,Z03,Z,Elite Eight,4,1,10,0.1
+M,1211,Z03,Z,Round of 32,2,6,10,0.6
+M,1211,Z03,Z,Round of 64,1,9,10,0.9
+M,1211,Z03,Z,Sweet 16,3,1,10,0.1
+M,1219,Z12,Z,Round of 64,1,2,10,0.2
+M,1220,Y13,Y,Round of 64,1,2,10,0.2
+M,1222,X02,X,Champion,6,1,10,0.1
+M,1222,X02,X,Elite Eight,4,7,10,0.7
+M,1222,X02,X,Final Four,5,2,10,0.2
+M,1222,X02,X,Round of 32,2,10,10,1
+M,1222,X02,X,Round of 64,1,10,10,1
+M,1222,X02,X,Sweet 16,3,8,10,0.8
+M,1228,X03,X,Round of 32,2,5,10,0.5
+M,1228,X03,X,Round of 64,1,9,10,0.9
+M,1234,X09,X,Round of 32,2,1,10,0.1
+M,1234,X09,X,Round of 64,1,6,10,0.6
+M,1235,Y02,Y,Champion,6,1,10,0.1
+M,1235,Y02,Y,Elite Eight,4,6,10,0.6
+M,1235,Y02,Y,Final Four,5,4,10,0.4
+M,1235,Y02,Y,Round of 32,2,8,10,0.8
+M,1235,Y02,Y,Round of 64,1,10,10,1
+M,1235,Y02,Y,Sweet 16,3,7,10,0.7
+M,1242,W04,W,Round of 32,2,8,10,0.8
+M,1242,W04,W,Round of 64,1,9,10,0.9
+M,1244,Z14,Z,Round of 64,1,1,10,0.1
+M,1246,Y07,Y,Round of 64,1,4,10,0.4
+M,1254,Z16,Z,Round of 64,1,1,10,0.1
+M,1257,W06,W,Round of 32,2,1,10,0.1
+M,1257,W06,W,Round of 64,1,4,10,0.4
+M,1257,W06,W,Sweet 16,3,1,10,0.1
+M,1270,X12,X,Round of 64,1,3,10,0.3
+M,1274,Z07,Z,Round of 64,1,6,10,0.6
+M,1275,Y11,Y,Round of 64,1,2,10,0.2
+M,1276,Y01,Y,Elite Eight,4,3,10,0.3
+M,1276,Y01,Y,Final Four,5,3,10,0.3
+M,1276,Y01,Y,Round of 32,2,7,10,0.7
+M,1276,Y01,Y,Round of 64,1,10,10,1
+M,1276,Y01,Y,Sweet 16,3,5,10,0.5
+M,1277,W03,W,Round of 32,2,9,10,0.9
+M,1277,W03,W,Round of 64,1,10,10,1
+M,1277,W03,W,Sweet 16,3,5,10,0.5
+M,1281,Z10,Z,Round of 64,1,4,10,0.4
+M,1301,Z11,Z,Round of 32,2,1,10,0.1
+M,1301,Z11,Z,Round of 64,1,2,10,0.2
+M,1304,X04,X,Elite Eight,4,1,10,0.1
+M,1304,X04,X,Round of 32,2,7,10,0.7
+M,1304,X04,X,Round of 64,1,8,10,0.8
+M,1304,X04,X,Sweet 16,3,2,10,0.2
+M,1314,X06,X,Round of 32,2,3,10,0.3
+M,1314,X06,X,Round of 64,1,8,10,0.8
+M,1314,X06,X,Sweet 16,3,1,10,0.1
+M,1320,W12,W,Round of 64,1,4,10,0.4
+M,1326,W08,W,Round of 32,2,1,10,0.1
+M,1326,W08,W,Round of 64,1,4,10,0.4
+M,1335,X14,X,Round of 64,1,1,10,0.1
+M,1345,Z02,Z,Elite Eight,4,2,10,0.2
+M,1345,Z02,Z,Round of 32,2,9,10,0.9
+M,1345,Z02,Z,Round of 64,1,9,10,0.9
+M,1345,Z02,Z,Sweet 16,3,7,10,0.7
+M,1365,Y10,Y,Round of 32,2,2,10,0.2
+M,1365,Y10,Y,Round of 64,1,6,10,0.6
+M,1378,W11,W,Round of 64,1,6,10,0.6
+M,1385,W05,W,Round of 32,2,2,10,0.2
+M,1385,W05,W,Round of 64,1,6,10,0.6
+M,1385,W05,W,Sweet 16,3,1,10,0.1
+M,1387,Y09,Y,Round of 32,2,2,10,0.2
+M,1387,Y09,Y,Round of 64,1,6,10,0.6
+M,1387,Y09,Y,Sweet 16,3,2,10,0.2
+M,1388,X07,X,Round of 64,1,5,10,0.5
+M,1395,W09,W,Round of 64,1,6,10,0.6
+M,1397,Y06,Y,Round of 32,2,3,10,0.3
+M,1397,Y06,Y,Round of 64,1,8,10,0.8
+M,1397,Y06,Y,Sweet 16,3,1,10,0.1
+M,1401,X10,X,Round of 64,1,5,10,0.5
+M,1403,Y05,Y,Elite Eight,4,1,10,0.1
+M,1403,Y05,Y,Final Four,5,1,10,0.1
+M,1403,Y05,Y,Round of 32,2,6,10,0.6
+M,1403,Y05,Y,Round of 64,1,8,10,0.8
+M,1403,Y05,Y,Sweet 16,3,2,10,0.2
+M,1407,X13,X,Round of 64,1,2,10,0.2
+M,1416,W10,W,Round of 64,1,1,10,0.1
+M,1417,W07,W,Elite Eight,4,1,10,0.1
+M,1417,W07,W,Round of 32,2,5,10,0.5
+M,1417,W07,W,Round of 64,1,9,10,0.9
+M,1417,W07,W,Sweet 16,3,2,10,0.2
+M,1429,Z09,Z,Round of 32,2,1,10,0.1
+M,1429,Z09,Z,Round of 64,1,5,10,0.5
+M,1433,X11,X,Round of 32,2,2,10,0.2
+M,1433,X11,X,Round of 64,1,2,10,0.2
+M,1433,X11,X,Sweet 16,3,1,10,0.1
+M,1435,X05,X,Round of 32,2,3,10,0.3
+M,1435,X05,X,Round of 64,1,7,10,0.7
+M,1435,X05,X,Sweet 16,3,3,10,0.3
+M,1437,Z08,Z,Round of 32,2,1,10,0.1
+M,1437,Z08,Z,Round of 64,1,5,10,0.5
+M,1437,Z08,Z,Sweet 16,3,1,10,0.1
+M,1438,Y03,Y,Round of 32,2,7,10,0.7
+M,1438,Y03,Y,Round of 64,1,10,10,1
+M,1438,Y03,Y,Sweet 16,3,2,10,0.2
+M,1458,Z05,Z,Round of 32,2,4,10,0.4
+M,1458,Z05,Z,Round of 64,1,8,10,0.8
+M,1458,Z05,Z,Sweet 16,3,1,10,0.1
+M,1465,W13,W,Round of 64,1,1,10,0.1
+M,1474,Z15,Z,Round of 32,2,1,10,0.1
+M,1474,Z15,Z,Round of 64,1,1,10,0.1

@@ -2,4 +2,26 @@
 .Rhistory
 .RData
 .Ruserdata
-data
+
+# Keep the app's deployed data in Git for Connect Cloud, but ignore
+# pipeline/training artifacts that the hosted dashboard does not need.
+data/*
+!data/1_input_data/
+data/1_input_data/*
+!data/1_input_data/MNCAATourneyCompactResults.csv
+!data/1_input_data/MNCAATourneySeeds.csv
+!data/1_input_data/MRegularSeasonDetailedResults.csv
+!data/1_input_data/MSeasons.csv
+!data/1_input_data/MTeams.csv
+!data/1_input_data/WNCAATourneyCompactResults.csv
+!data/1_input_data/WNCAATourneySeeds.csv
+!data/1_input_data/WRegularSeasonDetailedResults.csv
+!data/1_input_data/WSeasons.csv
+!data/1_input_data/WTeams.csv
+!data/3_predictions/
+!data/3_predictions/**
+!data/4_brackets/
+!data/4_brackets/**
+data/2_models/
+data/5_plots/
+data/6_kaggle_submissions/

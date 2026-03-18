@@ -1,0 +1,16 @@
+.git/
+.Rproj.user/
+.Rhistory
+models/
+create_brackets.R
+pipeline_run_config.R
+pipeline_run_config.yml
+predict_matchups.R
+prepare_model_data.R
+read_data.R
+reset_generated_files.R
+run_2026_pipeline.R
+scrape_ken_pom.R
+setup_packages.R
+train_xgboost.R
+Tournament Predictions.pdf
