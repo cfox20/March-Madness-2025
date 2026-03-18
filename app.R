@@ -2330,7 +2330,6 @@ server <- function(input, output, session) {
       return()
     }
 
-    set.seed(as.integer(input$season) + ifelse(input$division == "mens", 1L, 2L) + input$generate_bracket)
     selected_bracket <- sample(available_bracket_ids(), size = 1)
 
     bracket_frame <- bracket_pool() |>
