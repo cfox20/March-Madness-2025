@@ -61,7 +61,8 @@ default_pipeline_options <- function() {
       )
     ),
     brackets = list(
-      n_brackets = 25000,
+      pool_n_brackets = 100,
+      simulation_n_brackets = 25000,
       workers = NULL
     ),
     features = default_feature_group_settings()
@@ -80,7 +81,8 @@ make_test_pipeline_options <- function(divisions = c("mens", "womens")) {
   options$model$early_stopping_rounds <- 20
   options$model$max_train_rows <- 4000
   options$model$max_valid_rows <- 1000
-  options$brackets$n_brackets <- 100
+  options$brackets$pool_n_brackets <- 20
+  options$brackets$simulation_n_brackets <- 100
   options$brackets$workers <- 1
   options
 }
