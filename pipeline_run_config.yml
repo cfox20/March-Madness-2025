@@ -1,0 +1,95 @@
+# Main pipeline settings ---------------------------------------------------
+
+tournament_season: 2026
+divisions:
+  - mens
+  - womens
+
+stages:
+  prepare_data: true
+  train_models: true
+  predict_matchups: true
+  create_brackets: false
+
+seed: 123
+
+data:
+  mens_start_season: 2012
+  womens_start_season: 2010
+  train_fraction: 0.9
+  validation_tournament_fraction: 0.25
+  max_rows_per_division:
+
+model:
+  params:
+    objective: binary:logistic
+    eval_metric: logloss
+    eta: 0.03
+    max_depth: 6
+    min_child_weight: 8
+    subsample: 0.75
+    colsample_bytree: 0.6
+    lambda: 1
+    alpha: 0.5
+    gamma: 0.5
+  nrounds: 3000
+  early_stopping_rounds: 50
+  tune_regularization: false
+  max_train_rows:
+  max_valid_rows:
+  tournament_game_weight: 2
+  tournament_oversample_factor: 3
+  calibration:
+    method: none
+  seed_matchup_shrinkage:
+    strength: 0.35
+    matchups:
+      - "2-15"
+      - "3-14"
+      - "4-13"
+      - "5-12"
+      - "4-12"
+      - "3-11"
+      # - "6-11"
+  injury_adjustments:
+    teams:
+      Louisville: 0.05
+      Alabama: 0.06
+      Texas Tech: 0.07
+      Duke: 0.0
+      Wisconsin: 0.01
+      Gonzaga: 0.02
+      Connecticut: 0.02
+
+brackets:
+  pool_n_brackets: 10000
+  simulation_n_brackets: 50000
+  workers: 8
+
+# Feature groups -----------------------------------------------------------
+# Comment out any line below to remove that feature group from the model.
+# `team_ids` removes all team ID based features at once:
+# - a_team_id / b_team_id
+# - a_team_id_* / b_team_id_*
+# `cumulative_core` covers the full a_c_avg_* / b_c_avg_* season stat block.
+# `rolling_core` covers the full a_r_avg_* / b_r_avg_* recent-form block.
+# `pom_rank`, `conference_indicators`, and `kenpom` are men-only feature groups.
+
+features:
+  common:
+    - season
+    # - team_ids
+    - cumulative_core
+    - rolling_core
+    - tournament_seeds
+  mens: 
+    # - pom_rank
+    # - conference_indicators
+    - kenpom
+  womens:
+    - derived_rankings
+    - ranking_diffs
+
+# Optional quick-test profile ---------------------------------------------
+# Set to `test` to automatically shrink the data/model settings.
+# profile: test

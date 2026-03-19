@@ -30,7 +30,9 @@ scrape_ken_pom <- function(year) {
     mutate(season = year)
 }
 
-ken_pom <- map_dfr(2011:2025, scrape_ken_pom)
+source("R/config.R")
+
+ken_pom <- map_dfr(2011:TARGET_SEASON, scrape_ken_pom)
 
 
 # ken_pom |>
@@ -166,7 +168,7 @@ ken_pom_new <- as_tibble(ken_pom_dt) |>
   mutate(team = str_to_lower(team)) |>
   rename(team_name = team)
 
-m_teams <- read_csv("data//MTeams.csv") |>
+m_teams <- read_csv(file.path(INPUT_DIR, "MTeams.csv")) |>
   janitor::clean_names() |>
   mutate(team_name = str_to_lower(team_name)) |>
   select(team_id, team_name)
@@ -176,7 +178,7 @@ ken_pom <- left_join(ken_pom_new, m_teams, by = "team_name") |>
   relocate(team_id, season) |>
   select(-team_name)
 
-write_rds(ken_pom, "data//ken_pom.rds")
+write_rds(ken_pom, file.path(INPUT_DIR, "ken_pom.rds"))
 
 
 

@@ -26,6 +26,24 @@ compute_binary_metrics <- function(actual, predicted) {
   )
 }
 
+compute_regression_metrics <- function(actual, predicted) {
+  tibble(
+    rmse = Metrics::rmse(actual, predicted),
+    mae = Metrics::mae(actual, predicted),
+    mse = Metrics::mse(actual, predicted)
+  )
+}
+
+compute_model_metrics <- function(actual, predicted, task_type = c("classification", "regression")) {
+  task_type <- match.arg(task_type)
+
+  if (identical(task_type, "classification")) {
+    compute_binary_metrics(actual, predicted)
+  } else {
+    compute_regression_metrics(actual, predicted)
+  }
+}
+
 sanitize_dummy_level <- function(x) {
   x |>
     str_to_lower() |>
@@ -132,7 +150,8 @@ apply_model_feature_selection <- function(data, options, division, label_name = 
     select(any_of(selected_columns))
 }
 
-train_xgb_model <- function(train_data, valid_data, params, nrounds = 2000, early_stopping_rounds = 100) {
+train_xgb_model <- function(train_data, valid_data, params, nrounds = 2000, early_stopping_rounds = 100, task_type = c("classification", "regression")) {
+  task_type <- match.arg(task_type)
   dtrain <- xgboost::xgb.DMatrix(
     data = train_data$matrix,
     label = train_data$label,
@@ -157,7 +176,7 @@ train_xgb_model <- function(train_data, valid_data, params, nrounds = 2000, earl
 
   list(
     model = model,
-    metrics = compute_binary_metrics(valid_data$label, predictions),
+    metrics = compute_model_metrics(valid_data$label, predictions, task_type = task_type),
     predictions = predictions
   )
 }
@@ -175,7 +194,8 @@ expand_regularization_grid <- function(grid) {
     distinct()
 }
 
-tune_xgb_regularization <- function(train_data, valid_data, params, regularization_grid, nrounds = 2000, early_stopping_rounds = 100) {
+tune_xgb_regularization <- function(train_data, valid_data, params, regularization_grid, nrounds = 2000, early_stopping_rounds = 100, task_type = c("classification", "regression")) {
+  task_type <- match.arg(task_type)
   grid <- expand_regularization_grid(regularization_grid)
 
   if (nrow(grid) == 0) {
@@ -193,23 +213,42 @@ tune_xgb_regularization <- function(train_data, valid_data, params, regularizati
       valid_data = valid_data,
       params = tuned_params,
       nrounds = nrounds,
-      early_stopping_rounds = early_stopping_rounds
+      early_stopping_rounds = early_stopping_rounds,
+      task_type = task_type
     )
 
-    tibble(
-      lambda = lambda,
-      alpha = alpha,
-      gamma = gamma,
-      logloss = results$metrics$logloss[[1]],
-      mse = results$metrics$mse[[1]],
-      accuracy = results$metrics$accuracy[[1]],
-      best_iteration = results$model$best_iteration %fallback% NA_integer_
-    )
+    if (identical(task_type, "classification")) {
+      tibble(
+        lambda = lambda,
+        alpha = alpha,
+        gamma = gamma,
+        logloss = results$metrics$logloss[[1]],
+        mse = results$metrics$mse[[1]],
+        accuracy = results$metrics$accuracy[[1]],
+        best_iteration = results$model$best_iteration %fallback% NA_integer_
+      )
+    } else {
+      tibble(
+        lambda = lambda,
+        alpha = alpha,
+        gamma = gamma,
+        rmse = results$metrics$rmse[[1]],
+        mae = results$metrics$mae[[1]],
+        mse = results$metrics$mse[[1]],
+        best_iteration = results$model$best_iteration %fallback% NA_integer_
+      )
+    }
   })
 
-  best_result <- tuning_results |>
-    arrange(logloss, mse, desc(accuracy)) |>
-    slice(1)
+  best_result <- if (identical(task_type, "classification")) {
+    tuning_results |>
+      arrange(logloss, mse, desc(accuracy)) |>
+      slice(1)
+  } else {
+    tuning_results |>
+      arrange(rmse, mae, mse) |>
+      slice(1)
+  }
 
   best_params <- params
   best_params$lambda <- best_result$lambda[[1]]

@@ -83,6 +83,22 @@ load_region_lookup <- function(division_code) {
     pivot_longer(cols = c(W, X, Y, Z), names_to = "region", values_to = "region_name")
 }
 
+load_tournament_slots <- function(division_code) {
+  slot_file <- if (division_code == "mens") {
+    file.path(INPUT_DIR, "MNCAATourneySlots.csv")
+  } else {
+    file.path(INPUT_DIR, "WNCAATourneySlots.csv")
+  }
+
+  read_csv(slot_file, show_col_types = FALSE) |>
+    transmute(
+      season = Season,
+      Slot,
+      StrongSeed,
+      WeakSeed
+    )
+}
+
 load_regular_season_detailed_results <- function(division_code) {
   results_file <- if (division_code == "mens") {
     file.path(INPUT_DIR, "MRegularSeasonDetailedResults.csv")
@@ -400,17 +416,21 @@ load_historical_seed_rates <- function(division_code) {
     )
 }
 
-matchup_probability <- function(predictions, team_a_id, team_b_id) {
+extract_matchup_prediction <- function(predictions, team_a_id, team_b_id) {
   if (length(team_a_id) == 0 || length(team_b_id) == 0 || is.na(team_a_id) || is.na(team_b_id) || team_a_id == team_b_id) {
-    return(NA_real_)
+    return(tibble())
   }
 
-  matchup <- predictions |>
+  predictions |>
     filter(
       ((a_team_id == team_a_id & b_team_id == team_b_id) |
          (a_team_id == team_b_id & b_team_id == team_a_id))
     ) |>
     slice(1)
+}
+
+matchup_probability <- function(predictions, team_a_id, team_b_id) {
+  matchup <- extract_matchup_prediction(predictions, team_a_id, team_b_id)
 
   if (nrow(matchup) == 0) {
     return(NA_real_)
@@ -549,14 +569,16 @@ clean_seed_display <- function(seed_value) {
 
 percentile_color <- function(percentile) {
   if (is.na(percentile)) {
-    return("#f3efe4")
+    return("#f8f4ec")
   }
 
   percentile <- min(max(percentile, 0), 1)
+  low_rgb <- grDevices::col2rgb("#f2d9cc")
+  high_rgb <- grDevices::col2rgb("#b8e1d2")
   rgb(
-    red = (1 - percentile) * 235 + percentile * 68,
-    green = (1 - percentile) * 99 + percentile * 164,
-    blue = (1 - percentile) * 99 + percentile * 83,
+    red = (1 - percentile) * low_rgb[1] + percentile * high_rgb[1],
+    green = (1 - percentile) * low_rgb[2] + percentile * high_rgb[2],
+    blue = (1 - percentile) * low_rgb[3] + percentile * high_rgb[3],
     maxColorValue = 255
   )
 }
@@ -577,26 +599,29 @@ key_game_table_ui <- function(data, empty_text) {
   }
 
   tagList(
-    tags$table(
-      class = "table team-game-table",
-      tags$thead(
-        tags$tr(
-          tags$th("Game"),
-          tags$th("Score"),
-          tags$th("Margin"),
-          tags$th("Opponent Win %")
-        )
-      ),
-      tags$tbody(
-        lapply(seq_len(nrow(data)), function(i) {
-          row <- data[i, ]
+    div(
+      class = "table-shell",
+      tags$table(
+        class = "table team-game-table",
+        tags$thead(
           tags$tr(
-            tags$td(row$game[[1]]),
-            tags$td(row$score[[1]]),
-            tags$td(ifelse(is.na(row$margin[[1]]), "TBD", sprintf("%+.0f", row$margin[[1]]))),
-            tags$td(format_percent(row$opponent_win_pct[[1]]))
+            tags$th("Game"),
+            tags$th("Score"),
+            tags$th("Margin"),
+            tags$th("Opponent Win %")
           )
-        })
+        ),
+        tags$tbody(
+          lapply(seq_len(nrow(data)), function(i) {
+            row <- data[i, ]
+            tags$tr(
+              tags$td(row$game[[1]]),
+              tags$td(row$score[[1]]),
+              tags$td(ifelse(is.na(row$margin[[1]]), "TBD", sprintf("%+.0f", row$margin[[1]]))),
+              tags$td(format_percent(row$opponent_win_pct[[1]]))
+            )
+          })
+        )
       )
     )
   )
@@ -642,16 +667,18 @@ round_probability_table_ui <- function(data) {
     arrange(desc(`round_probability__Champion`), desc(`round_probability__Final Four`), region_name, seed_label, team_name)
 
   tagList(
-    tags$table(
-      class = "table team-game-table",
-      tags$thead(
-        tags$tr(
-          tags$th("Team"),
-          tags$th("Seed"),
-          tags$th("Region"),
-          lapply(rounds, tags$th)
-        )
-      ),
+    div(
+      class = "table-shell",
+      tags$table(
+        class = "table team-game-table",
+        tags$thead(
+          tags$tr(
+            tags$th("Team"),
+            tags$th("Seed"),
+            tags$th("Region"),
+            lapply(rounds, tags$th)
+          )
+        ),
         tags$tbody(
           lapply(seq_len(nrow(wide_data)), function(i) {
             row <- wide_data[i, ]
@@ -676,6 +703,7 @@ round_probability_table_ui <- function(data) {
             )
           })
         )
+      )
     )
   )
 }
@@ -743,17 +771,29 @@ export_matchups_jpg <- function(matchups, file, title) {
   if (nrow(matchups) == 0) {
     jpeg(filename = file, width = 1400, height = 700, quality = 100)
     grid.newpage()
-    grid.text(title, y = 0.9, gp = gpar(fontsize = 22, fontface = "bold"))
-    grid.text("No matchups available to export.", y = 0.8, gp = gpar(fontsize = 14))
+    grid.rect(gp = gpar(fill = "#f3efe5", col = NA))
+    grid.text(title, x = 0.07, y = 0.9, just = "left", gp = gpar(fontsize = 24, fontface = "bold", col = "#10253c"))
+    grid.text("No matchups available to export.", x = 0.07, y = 0.82, just = "left", gp = gpar(fontsize = 14, col = "#5d6a78"))
     dev.off()
     return(invisible(file))
   }
 
-  height_px <- max(900, 170 * nrow(matchups) + 180)
+  height_px <- max(980, 210 * nrow(matchups) + 220)
   jpeg(filename = file, width = 1600, height = height_px, quality = 100)
   grid.newpage()
+  grid.rect(gp = gpar(fill = "#f3efe5", col = NA))
+  grid.circle(x = 0.94, y = 0.94, r = 0.13, gp = gpar(fill = grDevices::adjustcolor("#0d7c6f", alpha.f = 0.08), col = NA))
+  grid.circle(x = 0.08, y = 0.08, r = 0.16, gp = gpar(fill = grDevices::adjustcolor("#c99f4b", alpha.f = 0.1), col = NA))
   pushViewport(viewport(layout = grid.layout(nrow(matchups) + 1, 1)))
-  grid.text(title, vp = viewport(layout.pos.row = 1, layout.pos.col = 1), y = 0.7, gp = gpar(fontsize = 24, fontface = "bold"))
+  pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1))
+  grid.roundrect(
+    x = 0.5, y = 0.55, width = 0.96, height = 0.72,
+    r = unit(0.03, "snpc"),
+    gp = gpar(fill = grDevices::adjustcolor("#ffffff", alpha.f = 0.82), col = "#e1d7c4", lwd = 1.5)
+  )
+  grid.text(title, x = 0.06, y = 0.62, just = "left", gp = gpar(fontsize = 24, fontface = "bold", col = "#10253c"))
+  grid.text("March Madness Models", x = 0.06, y = 0.42, just = "left", gp = gpar(fontsize = 11, fontface = "bold", col = "#0d7c6f"))
+  popViewport()
 
   for (i in seq_len(nrow(matchups))) {
     row <- matchups[i, ]
@@ -771,18 +811,27 @@ export_matchups_jpg <- function(matchups, file, title) {
     grid.roundrect(
       x = 0.5, y = 0.5, width = 0.96, height = 0.85,
       r = unit(0.03, "snpc"),
-      gp = gpar(fill = "#fffdf7", col = border_col, lwd = 2)
+      gp = gpar(fill = "#fffdf8", col = border_col, lwd = 1.8)
     )
-    grid.text(row$matchup_label[[1]], x = 0.06, y = 0.82, just = "left", gp = gpar(fontsize = 16, fontface = "bold"))
+    grid.roundrect(
+      x = 0.5, y = 0.88, width = 0.96, height = 0.06,
+      r = unit(0.03, "snpc"),
+      gp = gpar(fill = "#13314d", col = NA)
+    )
+    grid.text(row$matchup_label[[1]], x = 0.06, y = 0.82, just = "left", gp = gpar(fontsize = 16, fontface = "bold", col = "#10253c"))
     grid.text(subtitle, x = 0.06, y = 0.68, just = "left", gp = gpar(fontsize = 11, col = "#6b7280"))
-    grid.roundrect(x = 0.27, y = 0.34, width = 0.4, height = 0.34, r = unit(0.02, "snpc"),
-                   gp = gpar(fill = if (favored_a) grDevices::adjustcolor("#1f7a4c", alpha.f = alpha_a) else "#f3efe4", col = NA))
-    grid.roundrect(x = 0.73, y = 0.34, width = 0.4, height = 0.34, r = unit(0.02, "snpc"),
-                   gp = gpar(fill = if (favored_b) grDevices::adjustcolor("#1f7a4c", alpha.f = alpha_b) else "#f3efe4", col = NA))
-    grid.text(row$team_a[[1]], x = 0.08, y = 0.41, just = "left", gp = gpar(fontsize = 14, fontface = "bold"))
-    grid.text(row$team_b[[1]], x = 0.54, y = 0.41, just = "left", gp = gpar(fontsize = 14, fontface = "bold"))
-    grid.text(format_probability(prob_a), x = 0.39, y = 0.41, just = "right", gp = gpar(fontsize = 18, fontface = "bold"))
-    grid.text(format_probability(prob_b), x = 0.85, y = 0.41, just = "right", gp = gpar(fontsize = 18, fontface = "bold"))
+    grid.roundrect(
+      x = 0.27, y = 0.34, width = 0.4, height = 0.34, r = unit(0.02, "snpc"),
+      gp = gpar(fill = if (favored_a) grDevices::adjustcolor("#0d7c6f", alpha.f = 0.20 + (0.55 * alpha_a)) else "#f5efe3", col = "#dfd4c2", lwd = 1)
+    )
+    grid.roundrect(
+      x = 0.73, y = 0.34, width = 0.4, height = 0.34, r = unit(0.02, "snpc"),
+      gp = gpar(fill = if (favored_b) grDevices::adjustcolor("#0d7c6f", alpha.f = 0.20 + (0.55 * alpha_b)) else "#f5efe3", col = "#dfd4c2", lwd = 1)
+    )
+    grid.text(row$team_a[[1]], x = 0.08, y = 0.41, just = "left", gp = gpar(fontsize = 14, fontface = "bold", col = "#10253c"))
+    grid.text(row$team_b[[1]], x = 0.54, y = 0.41, just = "left", gp = gpar(fontsize = 14, fontface = "bold", col = "#10253c"))
+    grid.text(format_probability(prob_a), x = 0.39, y = 0.41, just = "right", gp = gpar(fontsize = 18, fontface = "bold", col = "#10253c"))
+    grid.text(format_probability(prob_b), x = 0.85, y = 0.41, just = "right", gp = gpar(fontsize = 18, fontface = "bold", col = "#10253c"))
     popViewport()
   }
 
@@ -1090,6 +1139,7 @@ build_interactive_round_games_app <- function(round_games, round_label, round_nu
     ) |>
     left_join(rename(team_labels, team_1 = team_id, team_1_name = team_name, team_1_seed = seed_label, team_1_region_name = region_name), by = "team_1") |>
     left_join(rename(team_labels, team_2 = team_id, team_2_name = team_name, team_2_seed = seed_label, team_2_region_name = region_name), by = "team_2") |>
+    left_join(rename(team_labels, selected_team_id = team_id, selected_team_seed = seed_label), by = "selected_team_id") |>
     mutate(
       display_region = coalesce(team_1_region_name, team_2_region_name),
       selected_team_name = case_when(
@@ -1161,7 +1211,1217 @@ build_interactive_bracket_games_app <- function(seed_table, probability_lookup, 
     arrange(round_num, region, matchup_order)
 }
 
-interactive_matchup_picker_ui <- function(game_row, extra_class = NULL) {
+resolve_seed_team_for_display_app <- function(team_ids, selected_team_ids, probability_lookup) {
+  team_ids <- unique(stats::na.omit(as.integer(team_ids)))
+  if (!length(team_ids)) {
+    return(NA_integer_)
+  }
+
+  if (length(team_ids) == 1) {
+    return(team_ids[[1]])
+  }
+
+  selected_team_ids <- unique(stats::na.omit(suppressWarnings(as.integer(selected_team_ids))))
+  used_team_ids <- intersect(team_ids, selected_team_ids)
+  if (length(used_team_ids) > 0) {
+    return(used_team_ids[[1]])
+  }
+
+  fallback_probability <- lookup_matchup_probability_app(team_ids[[1]], team_ids[[2]], probability_lookup)
+  if (is.na(fallback_probability) || fallback_probability >= 0.5) {
+    team_ids[[1]]
+  } else {
+    team_ids[[2]]
+  }
+}
+
+build_round_one_games_from_selections_app <- function(seed_table, probability_lookup, selections) {
+  round_one_pairs <- tibble(
+    best_seed = 1:8,
+    top_seed = c(1, 8, 5, 4, 6, 3, 7, 2),
+    bottom_seed = c(16, 9, 12, 13, 11, 14, 10, 15)
+  )
+
+  expand_grid(region = sort(unique(seed_table$region)), round_one_pairs) |>
+    left_join(
+      seed_table |>
+        group_by(region, seed_num) |>
+        summarise(team_ids = list(team_id), .groups = "drop") |>
+        rename(top_seed = seed_num, top_team_ids = team_ids),
+      by = c("region", "top_seed")
+    ) |>
+    left_join(
+      seed_table |>
+        group_by(region, seed_num) |>
+        summarise(team_ids = list(team_id), .groups = "drop") |>
+        rename(bottom_seed = seed_num, bottom_team_ids = team_ids),
+      by = c("region", "bottom_seed")
+    ) |>
+    transmute(
+      Slot = paste0("R1", region, best_seed),
+      region = region,
+      team_1 = vapply(top_team_ids, resolve_seed_team_for_display_app, integer(1), selected_team_ids = selections, probability_lookup = probability_lookup),
+      team_2 = vapply(bottom_team_ids, resolve_seed_team_for_display_app, integer(1), selected_team_ids = selections, probability_lookup = probability_lookup)
+    )
+}
+
+resolve_seed_reference_app <- function(seed_table, seed_ref, bracket_results) {
+  region_code <- str_extract(seed_ref, "^[A-Z]+")
+  seed_number <- suppressWarnings(as.integer(str_extract(seed_ref, "\\d+")))
+
+  seed_entries <- seed_table |>
+    filter(region == !!region_code, seed_num == !!seed_number) |>
+    arrange(team_name)
+
+  if (nrow(seed_entries) == 0) {
+    return(list(
+      team_id = NA_integer_,
+      seed_label = clean_seed_display(seed_ref),
+      team_name = "TBD",
+      region_name = NA_character_,
+      label = "TBD"
+    ))
+  }
+
+  chosen_team_id <- bracket_results$team_id[bracket_results$team_id %in% seed_entries$team_id]
+  chosen_team_id <- if (length(chosen_team_id)) chosen_team_id[[1]] else NA_integer_
+
+  chosen_entry <- if (!is.na(chosen_team_id)) {
+    seed_entries |>
+      filter(team_id == !!chosen_team_id) |>
+      slice(1)
+  } else if (nrow(seed_entries) == 1) {
+    seed_entries |>
+      slice(1)
+  } else {
+    tibble()
+  }
+
+  if (nrow(chosen_entry) == 1) {
+    label <- trimws(paste(chosen_entry$seed_label[[1]], chosen_entry$team_name[[1]]))
+    return(list(
+      team_id = chosen_entry$team_id[[1]],
+      seed_label = chosen_entry$seed_label[[1]],
+      team_name = chosen_entry$team_name[[1]],
+      region_name = chosen_entry$region_name[[1]],
+      label = label
+    ))
+  }
+
+  combined_name <- paste(seed_entries$team_name, collapse = " / ")
+  list(
+    team_id = NA_integer_,
+    seed_label = seed_entries$seed_label[[1]],
+    team_name = combined_name,
+    region_name = seed_entries$region_name[[1]],
+    label = trimws(paste(seed_entries$seed_label[[1]], combined_name))
+  )
+}
+
+build_saved_bracket_games_app <- function(seed_table, bracket_results, slots_frame, season) {
+  if (nrow(bracket_results) == 0) {
+    return(tibble())
+  }
+
+  winners_lookup <- bracket_results |>
+    left_join(
+      seed_table |>
+        select(team_id, team_name, seed_label, region_name),
+      by = "team_id"
+    ) |>
+    mutate(
+      winner_label = if_else(
+        is.na(team_name),
+        "TBD",
+        trimws(paste(seed_label, team_name))
+      )
+    )
+
+  resolve_slot_entry <- function(slot_ref) {
+    slot_entry <- winners_lookup |>
+      filter(Slot == !!slot_ref) |>
+      slice(1)
+
+    if (nrow(slot_entry) == 0) {
+      return(list(
+        team_id = NA_integer_,
+        seed_label = "",
+        team_name = "TBD",
+        region_name = NA_character_,
+        label = "TBD"
+      ))
+    }
+
+    list(
+      team_id = slot_entry$team_id[[1]],
+      seed_label = coalesce(slot_entry$seed_label[[1]], ""),
+      team_name = coalesce(slot_entry$team_name[[1]], "TBD"),
+      region_name = slot_entry$region_name[[1]],
+      label = coalesce(slot_entry$winner_label[[1]], "TBD")
+    )
+  }
+
+  resolve_reference <- function(ref) {
+    if (str_detect(ref, "^R\\d")) {
+      return(resolve_slot_entry(ref))
+    }
+
+    resolve_seed_reference_app(seed_table, ref, bracket_results)
+  }
+
+  region_names <- seed_table |>
+    distinct(region, region_name)
+
+  slots_for_season <- slots_frame |>
+    filter(season == !!season, Slot %in% bracket_results$Slot) |>
+    distinct(Slot, StrongSeed, WeakSeed)
+
+  game_rows <- lapply(seq_len(nrow(slots_for_season)), function(i) {
+    slot_row <- slots_for_season[i, ]
+    ordered_refs <- order_slot_references_app(slot_row$StrongSeed[[1]], slot_row$WeakSeed[[1]])
+    top_entry <- resolve_reference(ordered_refs[[1]])
+    bottom_entry <- resolve_reference(ordered_refs[[2]])
+    winner_entry <- resolve_slot_entry(slot_row$Slot[[1]])
+    round_num <- as.integer(str_extract(slot_row$Slot[[1]], "(?<=R)\\d"))
+    region_code <- case_when(
+      round_num <= 4 ~ str_extract(slot_row$Slot[[1]], "(?<=R\\d)[A-Z]"),
+      round_num == 5 ~ str_extract(slot_row$Slot[[1]], "(?<=R5)[A-Z]{2}"),
+      TRUE ~ "CH"
+    )
+
+    display_region <- case_when(
+      round_num <= 4 ~ region_names$region_name[match(region_code, region_names$region)],
+      region_code == "WX" ~ paste(region_names$region_name[match("W", region_names$region)], region_names$region_name[match("X", region_names$region)], sep = " / "),
+      region_code == "YZ" ~ paste(region_names$region_name[match("Y", region_names$region)], region_names$region_name[match("Z", region_names$region)], sep = " / "),
+      TRUE ~ "National Championship"
+    )
+
+    round_label <- case_when(
+      round_num == 1 ~ "Round of 64",
+      round_num == 2 ~ "Round of 32",
+      round_num == 3 ~ "Sweet 16",
+      round_num == 4 ~ "Elite Eight",
+      round_num == 5 ~ "Final Four",
+      TRUE ~ "Championship"
+    )
+
+    matchup_order <- case_when(
+      round_num <= 4 ~ as.integer(str_extract(slot_row$Slot[[1]], "\\d$")),
+      round_num == 5 ~ match(slot_row$Slot[[1]], c("R5WX", "R5YZ")),
+      TRUE ~ 1L
+    )
+
+    tibble(
+      Slot = slot_row$Slot[[1]],
+      region = region_code,
+      team_1 = top_entry$team_id,
+      team_2 = bottom_entry$team_id,
+      round_label = round_label,
+      round_num = round_num,
+      selected_team_id = winner_entry$team_id,
+      winner = winner_entry$team_id,
+      team_1_probability = NA_real_,
+      team_2_probability = NA_real_,
+      team_1_name = top_entry$team_name,
+      team_1_seed = top_entry$seed_label,
+      team_1_region_name = top_entry$region_name,
+      team_2_name = bottom_entry$team_name,
+      team_2_seed = bottom_entry$seed_label,
+      team_2_region_name = bottom_entry$region_name,
+      team_name = winner_entry$team_name,
+      selected_team_seed = winner_entry$seed_label,
+      region_name = winner_entry$region_name,
+      display_region = display_region,
+      selected_team_name = winner_entry$team_name,
+      matchup_order = matchup_order,
+      team_1_label = top_entry$label,
+      team_2_label = bottom_entry$label,
+      winner_label = winner_entry$label
+    )
+  })
+
+  bind_rows(game_rows) |>
+    arrange(round_num, region, matchup_order)
+}
+
+build_seed_display_label_app <- function(seed_table, region_code, seed_number, slot_winner_id = NA_integer_) {
+  seed_entries <- seed_table |>
+    filter(region == !!region_code, seed_num == !!seed_number) |>
+    arrange(team_name)
+
+  if (nrow(seed_entries) == 0) {
+    return("TBD")
+  }
+
+  seed_prefix <- paste0(seed_entries$seed_label[[1]], " ")
+  if (nrow(seed_entries) == 1) {
+    return(paste0(seed_prefix, seed_entries$team_name[[1]]))
+  }
+
+  if (!is.na(slot_winner_id) && any(seed_entries$team_id == slot_winner_id)) {
+    chosen_team <- seed_entries |>
+      filter(team_id == slot_winner_id) |>
+      slice(1)
+    return(paste0(seed_prefix, chosen_team$team_name[[1]]))
+  }
+
+  paste0(seed_prefix, paste(seed_entries$team_name, collapse = " / "))
+}
+
+build_saved_bracket_display_app <- function(seed_table, bracket_results, slots_frame, season) {
+  if (nrow(bracket_results) == 0) {
+    return(NULL)
+  }
+
+  bracket_games <- build_saved_bracket_games_app(
+    seed_table = seed_table,
+    bracket_results = bracket_results,
+    slots_frame = slots_frame,
+    season = season
+  )
+
+  first_round <- bracket_games |>
+    filter(round_num == 1) |>
+    transmute(
+      region,
+      game_index = match(Slot, paste0("R1", region, c(1, 8, 5, 4, 6, 3, 7, 2))),
+      top_label = team_1_label,
+      bottom_label = team_2_label,
+      winner_label = winner_label
+    )
+
+  round_two <- bracket_games |>
+    filter(round_num == 2) |>
+    transmute(
+      region,
+      game_index = match(Slot, paste0("R2", region, c(1, 4, 3, 2))),
+      top_label = team_1_label,
+      bottom_label = team_2_label,
+      winner_label = winner_label
+    )
+
+  round_three <- bracket_games |>
+    filter(round_num == 3) |>
+    transmute(
+      region,
+      game_index = match(Slot, paste0("R3", region, c(1, 2))),
+      top_label = team_1_label,
+      bottom_label = team_2_label,
+      winner_label = winner_label
+    )
+
+  round_four <- bracket_games |>
+    filter(round_num == 4) |>
+    transmute(
+      region,
+      game_index = matchup_order,
+      top_label = team_1_label,
+      bottom_label = team_2_label,
+      winner_label = winner_label
+    )
+
+  semifinals <- bracket_games |>
+    filter(round_num == 5) |>
+    transmute(
+      Slot,
+      top_label = team_1_label,
+      bottom_label = team_2_label,
+      winner_label = winner_label
+    ) |>
+    arrange(Slot)
+
+  championship <- bracket_games |>
+    filter(round_num == 6) |>
+    transmute(
+      Slot,
+      top_label = team_1_label,
+      bottom_label = team_2_label,
+      winner_label = winner_label
+    ) |>
+    slice(1)
+
+  list(
+    first_round = first_round,
+    round_two = round_two,
+    round_three = round_three,
+    round_four = round_four,
+    semifinals = semifinals,
+    championship = championship
+  )
+}
+
+build_bracket_display_from_games_app <- function(games) {
+  if (nrow(games) == 0) {
+    return(NULL)
+  }
+
+  label_team <- function(seed_value, team_name) {
+    if (is.na(team_name) || !nzchar(team_name)) {
+      return("TBD")
+    }
+
+    trimws(paste(clean_seed_display(seed_value), team_name))
+  }
+
+  winner_team <- function(seed_value, team_name) {
+    if (is.na(team_name) || !nzchar(team_name)) {
+      return("TBD")
+    }
+
+    trimws(paste(clean_seed_display(seed_value), team_name))
+  }
+
+  round_one <- games |>
+    filter(str_detect(Slot, "^R1")) |>
+    mutate(
+      region = str_extract(Slot, "(?<=R1)\\w"),
+      game_index = as.integer(str_extract(Slot, "\\d$")),
+      top_label = mapply(label_team, team_1_seed, team_1_name, USE.NAMES = FALSE),
+      bottom_label = mapply(label_team, team_2_seed, team_2_name, USE.NAMES = FALSE),
+      winner_label = mapply(winner_team, selected_team_seed, selected_team_name, USE.NAMES = FALSE)
+    ) |>
+    select(region, game_index, top_label, bottom_label, winner_label) |>
+    arrange(region, game_index)
+
+  winner_round <- function(prefix) {
+    games |>
+      filter(str_detect(Slot, paste0("^", prefix))) |>
+      mutate(
+        region = case_when(
+          prefix == "R5" ~ str_extract(Slot, "(?<=R5)[A-Z]{2}"),
+          prefix == "R6" ~ "CH",
+          TRUE ~ str_extract(Slot, paste0("(?<=", prefix, ")\\w"))
+        ),
+        game_index = if (prefix %in% c("R5", "R6")) {
+          seq_len(n())
+        } else {
+          as.integer(str_extract(Slot, "\\d$"))
+        },
+        winner_label = mapply(winner_team, selected_team_seed, selected_team_name, USE.NAMES = FALSE)
+      ) |>
+      select(Slot, region, game_index, winner_label) |>
+      arrange(region, game_index)
+  }
+
+  list(
+    first_round = round_one,
+    round_two = winner_round("R2"),
+    round_three = winner_round("R3"),
+    round_four = winner_round("R4"),
+    semifinals = winner_round("R5"),
+    championship = winner_round("R6") |> slice(1)
+  )
+}
+
+export_bracket_jpg <- function(bracket_display, region_lookup_frame, season, file, title, bracket_games = NULL) {
+  jpeg(filename = file, width = 2400, height = 1500, quality = 100)
+  grid.newpage()
+  grid.rect(gp = gpar(fill = "#f3efe5", col = NA))
+  grid.circle(x = 0.92, y = 0.92, r = 0.16, gp = gpar(fill = grDevices::adjustcolor("#0d7c6f", alpha.f = 0.08), col = NA))
+  grid.circle(x = 0.12, y = 0.12, r = 0.18, gp = gpar(fill = grDevices::adjustcolor("#c99f4b", alpha.f = 0.1), col = NA))
+  grid.roundrect(
+    x = 0.5, y = 0.5, width = 0.96, height = 0.94,
+    r = unit(0.03, "snpc"),
+    gp = gpar(fill = grDevices::adjustcolor("#ffffff", alpha.f = 0.82), col = "#e1d7c4", lwd = 1.5)
+  )
+
+  grid.text(title, x = 0.05, y = 0.965, just = "left", gp = gpar(fontsize = 28, fontface = "bold", col = "#10253c"))
+  grid.text("Classic tournament bracket export", x = 0.05, y = 0.938, just = "left", gp = gpar(fontsize = 12, fontface = "bold", col = "#0d7c6f"))
+
+  if (is.null(bracket_display)) {
+    grid.text("No bracket is available to export.", x = 0.05, y = 0.88, just = "left", gp = gpar(fontsize = 16, col = "#5d6a78"))
+    dev.off()
+    return(invisible(file))
+  }
+
+  region_names <- region_lookup_frame |>
+    filter(season == !!season)
+
+  label_rows <- list(
+    team_top = c(2, 6, 10, 14, 18, 22, 26, 30),
+    team_bottom = c(4, 8, 12, 16, 20, 24, 28, 32),
+    r1 = c(3, 7, 11, 15, 19, 23, 27, 31),
+    r2 = c(5, 13, 21, 29),
+    r3 = c(9, 25),
+    r4 = c(17)
+  )
+
+  box_label <- function(label) {
+    stringr::str_trunc(ifelse(is.na(label) || !nzchar(label), "TBD", label), width = 24)
+  }
+
+  draw_box <- function(x, y, label, width = 0.105, height = 0.021, fill = "#ffffff", border = "#c8d1db", fontface = "plain") {
+    grid.roundrect(
+      x = x, y = y, width = width, height = height,
+      r = unit(0.0025, "snpc"),
+      gp = gpar(fill = fill, col = border, lwd = 1.1)
+    )
+    grid.text(box_label(label), x = x, y = y, gp = gpar(fontsize = 8.5, fontface = fontface, col = "#1d3146"))
+  }
+
+  draw_matchup_box <- function(x, y, team_1_label, team_2_label, selected_label = NA_character_, width = 0.13, height = 0.052) {
+    winner_top <- !is.na(selected_label) && identical(selected_label, team_1_label)
+    winner_bottom <- !is.na(selected_label) && identical(selected_label, team_2_label)
+
+    grid.roundrect(
+      x = x, y = y, width = width, height = height,
+      r = unit(0.004, "snpc"),
+      gp = gpar(fill = "#ffffff", col = "#c8d1db", lwd = 1.1)
+    )
+    grid.rect(
+      x = x, y = y + (height * 0.18), width = width * 0.96, height = height * 0.34,
+      gp = gpar(fill = if (winner_top) "#eaf4f1" else "#ffffff", col = NA)
+    )
+    grid.rect(
+      x = x, y = y - (height * 0.18), width = width * 0.96, height = height * 0.34,
+      gp = gpar(fill = if (winner_bottom) "#eaf4f1" else "#ffffff", col = NA)
+    )
+    grid.lines(
+      x = unit(c(x - (width * 0.46), x + (width * 0.46)), "npc"),
+      y = unit(c(y, y), "npc"),
+      gp = gpar(col = "#dde4ec", lwd = 1)
+    )
+    grid.text(box_label(team_1_label), x = x, y = y + (height * 0.18), gp = gpar(fontsize = 8.2, fontface = if (winner_top) "bold" else "plain", col = "#1d3146"))
+    grid.text(box_label(team_2_label), x = x, y = y - (height * 0.18), gp = gpar(fontsize = 8.2, fontface = if (winner_bottom) "bold" else "plain", col = "#1d3146"))
+  }
+
+  draw_connector <- function(source_x, target_x, y_top, y_bottom, target_y) {
+    mid_x <- (source_x + target_x) / 2
+    connector_gp <- gpar(col = "#c4ccd6", lwd = 1.1)
+    grid.lines(x = unit(c(source_x, mid_x), "npc"), y = unit(c(y_top, y_top), "npc"), gp = connector_gp)
+    grid.lines(x = unit(c(source_x, mid_x), "npc"), y = unit(c(y_bottom, y_bottom), "npc"), gp = connector_gp)
+    grid.lines(x = unit(c(mid_x, mid_x), "npc"), y = unit(c(y_top, y_bottom), "npc"), gp = connector_gp)
+    grid.lines(x = unit(c(mid_x, target_x), "npc"), y = unit(c(target_y, target_y), "npc"), gp = connector_gp)
+  }
+
+  draw_single_connector <- function(source_x, target_x, source_y, target_y) {
+    mid_x <- (source_x + target_x) / 2
+    connector_gp <- gpar(col = "#c4ccd6", lwd = 1.1)
+    grid.lines(x = unit(c(source_x, mid_x), "npc"), y = unit(c(source_y, source_y), "npc"), gp = connector_gp)
+    grid.lines(x = unit(c(mid_x, mid_x), "npc"), y = unit(c(source_y, target_y), "npc"), gp = connector_gp)
+    grid.lines(x = unit(c(mid_x, target_x), "npc"), y = unit(c(target_y, target_y), "npc"), gp = connector_gp)
+  }
+
+  row_y <- function(row_value, y_top, region_height) {
+    y_top - ((row_value - 1) / 31) * region_height
+  }
+
+  draw_region <- function(region_code, side = "left", y_top = 0.84) {
+    region_name <- region_names$region_name[region_names$region == region_code][[1]]
+    first_round <- bracket_display$first_round |>
+      filter(region == region_code) |>
+      arrange(game_index)
+    round_two <- bracket_display$round_two |>
+      filter(region == region_code) |>
+      arrange(game_index)
+    round_three <- bracket_display$round_three |>
+      filter(region == region_code) |>
+      arrange(game_index)
+    round_four <- bracket_display$round_four |>
+      filter(region == region_code) |>
+      arrange(game_index)
+
+    region_height <- 0.30
+    if (identical(side, "left")) {
+      centers <- c(first = 0.105, r1 = 0.195, r2 = 0.285, r3 = 0.375, r4 = 0.465)
+      title_x <- 0.05
+    } else {
+      centers <- c(first = 0.895, r1 = 0.805, r2 = 0.715, r3 = 0.625, r4 = 0.535)
+      title_x <- 0.95
+    }
+
+    box_half <- 0.105 / 2
+    grid.text(
+      region_name,
+      x = title_x,
+      y = y_top + 0.03,
+      just = if (identical(side, "left")) "left" else "right",
+      gp = gpar(fontsize = 14, fontface = "bold", col = "#0d7c6f")
+    )
+
+    for (i in seq_len(nrow(first_round))) {
+      top_y <- row_y(label_rows$team_top[[i]], y_top, region_height)
+      bottom_y <- row_y(label_rows$team_bottom[[i]], y_top, region_height)
+      winner_y <- row_y(label_rows$r1[[i]], y_top, region_height)
+
+      draw_box(centers[["first"]], top_y, first_round$top_label[[i]])
+      draw_box(centers[["first"]], bottom_y, first_round$bottom_label[[i]])
+      draw_box(centers[["r1"]], winner_y, first_round$winner_label[[i]], fill = "#f8fbff", fontface = "bold")
+
+      draw_connector(
+        if (identical(side, "left")) centers[["first"]] + box_half else centers[["first"]] - box_half,
+        if (identical(side, "left")) centers[["r1"]] - box_half else centers[["r1"]] + box_half,
+        top_y,
+        bottom_y,
+        winner_y
+      )
+    }
+
+    for (i in seq_len(nrow(round_two))) {
+      winner_y <- row_y(label_rows$r2[[i]], y_top, region_height)
+      draw_box(centers[["r2"]], winner_y, round_two$winner_label[[i]], fill = "#f8fbff", fontface = "bold")
+      draw_connector(
+        if (identical(side, "left")) centers[["r1"]] + box_half else centers[["r1"]] - box_half,
+        if (identical(side, "left")) centers[["r2"]] - box_half else centers[["r2"]] + box_half,
+        row_y(label_rows$r1[[2 * i - 1]], y_top, region_height),
+        row_y(label_rows$r1[[2 * i]], y_top, region_height),
+        winner_y
+      )
+    }
+
+    for (i in seq_len(nrow(round_three))) {
+      winner_y <- row_y(label_rows$r3[[i]], y_top, region_height)
+      draw_box(centers[["r3"]], winner_y, round_three$winner_label[[i]], fill = "#f8fbff", fontface = "bold")
+      draw_connector(
+        if (identical(side, "left")) centers[["r2"]] + box_half else centers[["r2"]] - box_half,
+        if (identical(side, "left")) centers[["r3"]] - box_half else centers[["r3"]] + box_half,
+        row_y(label_rows$r2[[2 * i - 1]], y_top, region_height),
+        row_y(label_rows$r2[[2 * i]], y_top, region_height),
+        winner_y
+      )
+    }
+
+    if (nrow(round_four) == 1) {
+      winner_y <- row_y(label_rows$r4[[1]], y_top, region_height)
+      draw_box(centers[["r4"]], winner_y, round_four$winner_label[[1]], fill = "#f6f2e7", border = "#c7b183", fontface = "bold")
+      draw_connector(
+        if (identical(side, "left")) centers[["r3"]] + box_half else centers[["r3"]] - box_half,
+        if (identical(side, "left")) centers[["r4"]] - box_half else centers[["r4"]] + box_half,
+        row_y(label_rows$r3[[1]], y_top, region_height),
+        row_y(label_rows$r3[[2]], y_top, region_height),
+        winner_y
+      )
+    }
+  }
+
+  draw_region("W", side = "left", y_top = 0.84)
+  draw_region("X", side = "left", y_top = 0.46)
+  draw_region("Y", side = "right", y_top = 0.84)
+  draw_region("Z", side = "right", y_top = 0.46)
+
+  if (!is.null(bracket_games) && nrow(bracket_games) > 0) {
+    semifinals <- bracket_games |>
+      filter(Slot %in% c("R5WX", "R5YZ")) |>
+      arrange(Slot)
+    championship_game <- bracket_games |>
+      filter(Slot == "R6CH") |>
+      slice(1)
+
+    format_team_line <- function(seed_value, team_name) {
+      if (is.na(team_name) || !nzchar(team_name)) {
+        return("TBD")
+      }
+
+      trimws(paste(clean_seed_display(seed_value), team_name))
+    }
+
+    grid.text("Final Four", x = 0.5, y = 0.58, gp = gpar(fontsize = 12, fontface = "bold", col = "#6a7684"))
+    grid.text("Championship", x = 0.5, y = 0.455, gp = gpar(fontsize = 10, fontface = "bold", col = "#6a7684"))
+
+    if (nrow(semifinals) >= 1) {
+      draw_matchup_box(
+        0.44, 0.53,
+        format_team_line(semifinals$team_1_seed[[1]], semifinals$team_1_name[[1]]),
+        format_team_line(semifinals$team_2_seed[[1]], semifinals$team_2_name[[1]]),
+        format_team_line(semifinals$selected_team_seed[[1]], semifinals$selected_team_name[[1]])
+      )
+    }
+
+    if (nrow(semifinals) >= 2) {
+      draw_matchup_box(
+        0.56, 0.53,
+        format_team_line(semifinals$team_1_seed[[2]], semifinals$team_1_name[[2]]),
+        format_team_line(semifinals$team_2_seed[[2]], semifinals$team_2_name[[2]]),
+        format_team_line(semifinals$selected_team_seed[[2]], semifinals$selected_team_name[[2]])
+      )
+    }
+
+    if (nrow(championship_game) == 1) {
+      draw_matchup_box(
+        0.5, 0.41,
+        format_team_line(championship_game$team_1_seed[[1]], championship_game$team_1_name[[1]]),
+        format_team_line(championship_game$team_2_seed[[1]], championship_game$team_2_name[[1]]),
+        format_team_line(championship_game$selected_team_seed[[1]], championship_game$selected_team_name[[1]]),
+        width = 0.15,
+        height = 0.058
+      )
+    }
+
+    draw_single_connector(0.505, 0.425, 0.53, 0.41)
+    draw_single_connector(0.495, 0.575, 0.53, 0.41)
+  } else {
+    semifinals <- bracket_display$semifinals
+    championship <- bracket_display$championship
+
+    grid.text("Final Four", x = 0.5, y = 0.58, gp = gpar(fontsize = 12, fontface = "bold", col = "#6a7684"))
+    draw_box(0.46, 0.53, if (nrow(semifinals) >= 1) semifinals$winner_label[[1]] else "TBD", width = 0.10, height = 0.026, fill = "#f8fbff", fontface = "bold")
+    draw_box(0.54, 0.53, if (nrow(semifinals) >= 2) semifinals$winner_label[[2]] else "TBD", width = 0.10, height = 0.026, fill = "#f8fbff", fontface = "bold")
+    draw_box(0.5, 0.42, if (nrow(championship) == 1) championship$winner_label[[1]] else "TBD", width = 0.11, height = 0.03, fill = "#f6f2e7", border = "#c7b183", fontface = "bold")
+    grid.text("Champion", x = 0.5, y = 0.455, gp = gpar(fontsize = 10, fontface = "bold", col = "#6a7684"))
+    draw_single_connector(0.51, 0.445, 0.53, 0.42)
+    draw_single_connector(0.49, 0.555, 0.53, 0.42)
+  }
+
+  dev.off()
+  invisible(file)
+}
+
+normalize_svg_text <- function(text) {
+  if (length(text) == 0 || is.null(text)) {
+    return("TBD")
+  }
+
+  text <- as.character(text[[1]])
+  if (is.na(text) || !nzchar(text)) {
+    return("TBD")
+  }
+
+  text
+}
+
+svg_escape <- function(text) {
+  text <- normalize_svg_text(text)
+
+  text <- str_replace_all(text, fixed("&"), "&amp;")
+  text <- str_replace_all(text, fixed("<"), "&lt;")
+  str_replace_all(text, fixed(">"), "&gt;")
+}
+
+svg_label <- function(text, width = 24) {
+  svg_escape(str_trunc(normalize_svg_text(text), width = width))
+}
+
+svg_line <- function(x1, y1, x2, y2, stroke = "#cbd5e1", stroke_width = 1) {
+  sprintf(
+    "<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='%.1f' stroke-linecap='square' />",
+    x1, y1, x2, y2, stroke, stroke_width
+  )
+}
+
+svg_box <- function(x, y, width, height, label, fill = "#ffffff", stroke = "#cbd5e1", font_weight = 600, font_size = 10) {
+  sprintf(
+    paste0(
+      "<g>",
+      "<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='2' ry='2' fill='%s' stroke='%s' />",
+      "<text x='%.1f' y='%.1f' fill='#0f172a' font-size='%.1f' font-weight='%d' dominant-baseline='middle'>%s</text>",
+      "</g>"
+    ),
+    x, y, width, height, fill, stroke,
+    x + 6, y + (height / 2), font_size, font_weight, svg_label(label)
+  )
+}
+
+svg_matchup_box <- function(x, y, width, height, top_label, bottom_label, winner_label = NA_character_) {
+  winner_label <- ifelse(is.na(winner_label), "", as.character(winner_label))
+  top_is_winner <- identical(as.character(top_label), winner_label)
+  bottom_is_winner <- identical(as.character(bottom_label), winner_label)
+  split_y <- y + (height / 2)
+
+  paste0(
+    "<g>",
+    sprintf(
+      "<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='2' ry='2' fill='#ffffff' stroke='#cbd5e1' />",
+      x, y, width, height
+    ),
+    sprintf(
+      "<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s' stroke='none' />",
+      x + 1, y + 1, width - 2, (height / 2) - 1, if (top_is_winner) "#eef4ff" else "#ffffff"
+    ),
+    sprintf(
+      "<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s' stroke='none' />",
+      x + 1, split_y, width - 2, (height / 2) - 1, if (bottom_is_winner) "#eef4ff" else "#ffffff"
+    ),
+    sprintf(
+      "<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='#e2e8f0' stroke-width='1' />",
+      x, split_y, x + width, split_y
+    ),
+    sprintf(
+      "<text x='%.1f' y='%.1f' fill='#0f172a' font-size='10' font-weight='%d' dominant-baseline='middle'>%s</text>",
+      x + 6, y + (height * 0.25), if (top_is_winner) 700 else 600, svg_label(top_label)
+    ),
+    sprintf(
+      "<text x='%.1f' y='%.1f' fill='#0f172a' font-size='10' font-weight='%d' dominant-baseline='middle'>%s</text>",
+      x + 6, y + (height * 0.75), if (bottom_is_winner) 700 else 600, svg_label(bottom_label)
+    ),
+    "</g>"
+  )
+}
+
+svg_bracket_connector <- function(source_x, target_x, top_y, bottom_y, target_y, stroke = "#cbd5e1") {
+  mid_x <- (source_x + target_x) / 2
+  c(
+    svg_line(source_x, top_y, mid_x, top_y, stroke = stroke),
+    svg_line(source_x, bottom_y, mid_x, bottom_y, stroke = stroke),
+    svg_line(mid_x, top_y, mid_x, bottom_y, stroke = stroke),
+    svg_line(mid_x, target_y, target_x, target_y, stroke = stroke)
+  )
+}
+
+slot_display_order_app <- function(slot_ref) {
+  if (length(slot_ref) == 0 || is.null(slot_ref)) {
+    return(Inf)
+  }
+
+  slot_ref <- as.character(slot_ref[[1]])
+  if (is.na(slot_ref) || !nzchar(slot_ref)) {
+    return(Inf)
+  }
+
+  round_num <- suppressWarnings(as.integer(str_extract(slot_ref, "(?<=R)\\d")))
+  if (is.na(round_num)) {
+    return(Inf)
+  }
+
+  within_order <- case_when(
+    round_num == 1 ~ match(as.integer(str_extract(slot_ref, "\\d$")), c(1, 8, 5, 4, 6, 3, 7, 2)),
+    round_num == 2 ~ match(as.integer(str_extract(slot_ref, "\\d$")), c(1, 4, 3, 2)),
+    round_num == 3 ~ match(as.integer(str_extract(slot_ref, "\\d$")), c(1, 2)),
+    round_num == 4 ~ 1L,
+    round_num == 5 ~ match(slot_ref, c("R5WX", "R5YZ")),
+    round_num == 6 ~ 1L,
+    TRUE ~ NA_integer_
+  )
+
+  region_key <- case_when(
+    round_num <= 4 ~ str_extract(slot_ref, "(?<=R\\d)[A-Z]"),
+    round_num == 5 ~ str_extract(slot_ref, "(?<=R5)[A-Z]{2}"),
+    TRUE ~ "CH"
+  )
+
+  region_order <- match(region_key, c("W", "X", "Y", "Z", "WX", "YZ", "CH"))
+  ifelse(is.na(within_order) || is.na(region_order), Inf, (round_num * 100) + (region_order * 10) + within_order)
+}
+
+order_slot_references_app <- function(ref_a, ref_b) {
+  if (!str_detect(ref_a, "^R\\d") || !str_detect(ref_b, "^R\\d")) {
+    return(c(ref_a, ref_b))
+  }
+
+  order_a <- slot_display_order_app(ref_a)
+  order_b <- slot_display_order_app(ref_b)
+
+  if (is.infinite(order_a) || is.infinite(order_b) || order_a <= order_b) {
+    c(ref_a, ref_b)
+  } else {
+    c(ref_b, ref_a)
+  }
+}
+
+build_generated_region_svg <- function(bracket_games, region_code, region_name, side = "left", origin_x = 0, origin_y = 0) {
+  round_one <- bracket_games |>
+    filter(round_num == 1, region == region_code) |>
+    mutate(display_order = match(Slot, paste0("R1", region_code, c(1, 8, 5, 4, 6, 3, 7, 2)))) |>
+    arrange(display_order)
+  round_two <- bracket_games |>
+    filter(round_num == 2, region == region_code) |>
+    mutate(display_order = match(Slot, paste0("R2", region_code, c(1, 4, 3, 2)))) |>
+    arrange(display_order)
+  round_three <- bracket_games |>
+    filter(round_num == 3, region == region_code) |>
+    mutate(display_order = match(Slot, paste0("R3", region_code, c(1, 2)))) |>
+    arrange(display_order)
+  round_four <- bracket_games |>
+    filter(round_num == 4, region == region_code) |>
+    arrange(Slot)
+
+  box_w <- 138
+  box_h <- 44
+  first_round_tops <- seq(0, by = 62, length.out = 8)
+  center_y <- function(top_values) top_values + (box_h / 2)
+  next_round_tops <- function(top_values) {
+    centers <- center_y(top_values)
+    vapply(seq(1, length(centers), by = 2), function(idx) {
+      mean(centers[idx:(idx + 1)]) - (box_h / 2)
+    }, numeric(1))
+  }
+
+  round_two_tops <- next_round_tops(first_round_tops)
+  round_three_tops <- next_round_tops(round_two_tops)
+  round_four_tops <- next_round_tops(round_three_tops)
+
+  xs <- if (identical(side, "left")) {
+    c(r1 = 0, r2 = 176, r3 = 352, r4 = 528)
+  } else {
+    c(r1 = 528, r2 = 352, r3 = 176, r4 = 0)
+  }
+
+  text_anchor <- if (identical(side, "left")) "" else " text-anchor='end'"
+  title_x <- if (identical(side, "left")) 16 else 1764
+  header_text <- c("FIRST ROUND", "SECOND ROUND", "SWEET 16", "ELITE EIGHT")
+  header_y <- origin_y - 18
+  header_xs <- if (identical(side, "left")) {
+    origin_x + xs + (box_w / 2)
+  } else {
+    origin_x + xs + (box_w / 2)
+  }
+
+  elements <- c(
+    sprintf(
+      "<text x='%.1f' y='%.1f' fill='#0f766e' font-size='13' font-weight='700' letter-spacing='2.0'%s>%s</text>",
+      title_x,
+      origin_y - 58,
+      text_anchor,
+      svg_escape(str_to_upper(region_name))
+    ),
+    vapply(seq_along(header_text), function(i) {
+      sprintf(
+        "<text x='%.1f' y='%.1f' fill='#64748b' font-size='9' font-weight='700' letter-spacing='1.4' text-anchor='middle'>%s</text>",
+        header_xs[[i]],
+        header_y,
+        header_text[[i]]
+      )
+    }, character(1))
+  )
+
+  add_round <- function(games, tops, x_key, prev_tops = NULL, prev_x_key = NULL) {
+    round_elements <- character()
+
+    for (i in seq_len(nrow(games))) {
+      round_elements <- c(
+        round_elements,
+        svg_matchup_box(
+          origin_x + xs[[x_key]],
+          origin_y + tops[[i]],
+          box_w,
+          box_h,
+          games$team_1_label[[i]],
+          games$team_2_label[[i]],
+          games$winner_label[[i]]
+        )
+      )
+
+      if (!is.null(prev_tops) && !is.null(prev_x_key)) {
+        round_elements <- c(
+          round_elements,
+          svg_bracket_connector(
+            source_x = if (identical(side, "left")) origin_x + xs[[prev_x_key]] + box_w else origin_x + xs[[prev_x_key]],
+            target_x = if (identical(side, "left")) origin_x + xs[[x_key]] else origin_x + xs[[x_key]] + box_w,
+            top_y = origin_y + prev_tops[[2 * i - 1]] + (box_h / 2),
+            bottom_y = origin_y + prev_tops[[2 * i]] + (box_h / 2),
+            target_y = origin_y + tops[[i]] + (box_h / 2)
+          )
+        )
+      }
+    }
+
+    round_elements
+  }
+
+  elements <- c(
+    elements,
+    add_round(round_one, first_round_tops, "r1"),
+    add_round(round_two, round_two_tops, "r2", first_round_tops, "r1"),
+    add_round(round_three, round_three_tops, "r3", round_two_tops, "r2"),
+    add_round(round_four, round_four_tops, "r4", round_three_tops, "r3")
+  )
+
+  list(
+    elements = elements,
+    champion_edge_x = if (identical(side, "left")) origin_x + xs[["r4"]] + box_w else origin_x + xs[["r4"]],
+    champion_center_y = origin_y + round_four_tops[[1]] + (box_h / 2)
+  )
+}
+
+build_generated_bracket_page_ui <- function(bracket_games, region_lookup_frame, season) {
+  if (nrow(bracket_games) == 0) {
+    return(div(class = "section-note", "No bracket generated yet."))
+  }
+
+  region_names <- region_lookup_frame |>
+    filter(season == !!season)
+
+  region_name_for <- function(region_code) {
+    region_value <- region_names$region_name[region_names$region == region_code]
+    if (length(region_value) == 0 || is.na(region_value[[1]])) region_code else region_value[[1]]
+  }
+
+  left_top <- build_generated_region_svg(bracket_games, "W", region_name_for("W"), side = "left", origin_x = 40, origin_y = 100)
+  left_bottom <- build_generated_region_svg(bracket_games, "X", region_name_for("X"), side = "left", origin_x = 40, origin_y = 610)
+  right_top <- build_generated_region_svg(bracket_games, "Y", region_name_for("Y"), side = "right", origin_x = 1040, origin_y = 100)
+  right_bottom <- build_generated_region_svg(bracket_games, "Z", region_name_for("Z"), side = "right", origin_x = 1040, origin_y = 610)
+
+  semifinals <- bracket_games |>
+    filter(round_num == 5) |>
+    arrange(match(Slot, c("R5WX", "R5YZ")))
+  championship <- bracket_games |>
+    filter(round_num == 6) |>
+    slice(1)
+
+  semi_left <- list(x = 760, y = 440, width = 120, height = 48)
+  semi_right <- list(x = 900, y = 440, width = 120, height = 48)
+  title_y <- 410
+  championship_box <- list(x = 830, y = 590, width = 120, height = 48)
+  champion_box <- list(x = 855, y = 700, width = 110, height = 22)
+
+  center_elements <- c(
+    sprintf("<text x='820' y='%.1f' fill='#64748b' font-size='10' font-weight='700' letter-spacing='1.4'>FINAL FOUR</text>", title_y),
+    sprintf("<text x='960' y='%.1f' fill='#64748b' font-size='10' font-weight='700' letter-spacing='1.4' text-anchor='end'>FINAL FOUR</text>", title_y),
+    svg_matchup_box(
+      semi_left$x,
+      semi_left$y,
+      semi_left$width,
+      semi_left$height,
+      if (nrow(semifinals) >= 1) semifinals$team_1_label[[1]] else "TBD",
+      if (nrow(semifinals) >= 1) semifinals$team_2_label[[1]] else "TBD",
+      if (nrow(semifinals) >= 1) semifinals$winner_label[[1]] else "TBD"
+    ),
+    svg_matchup_box(
+      semi_right$x,
+      semi_right$y,
+      semi_right$width,
+      semi_right$height,
+      if (nrow(semifinals) >= 2) semifinals$team_1_label[[2]] else "TBD",
+      if (nrow(semifinals) >= 2) semifinals$team_2_label[[2]] else "TBD",
+      if (nrow(semifinals) >= 2) semifinals$winner_label[[2]] else "TBD"
+    ),
+    svg_bracket_connector(left_top$champion_edge_x, semi_left$x, left_top$champion_center_y, left_bottom$champion_center_y, semi_left$y + (semi_left$height / 2)),
+    svg_bracket_connector(right_top$champion_edge_x, semi_right$x + semi_right$width, right_top$champion_center_y, right_bottom$champion_center_y, semi_right$y + (semi_right$height / 2)),
+    sprintf("<text x='890' y='570' fill='#64748b' font-size='10' font-weight='700' letter-spacing='1.4' text-anchor='middle'>CHAMPIONSHIP</text>"),
+    svg_matchup_box(
+      championship_box$x,
+      championship_box$y,
+      championship_box$width,
+      championship_box$height,
+      if (nrow(championship) == 1) championship$team_1_label[[1]] else "TBD",
+      if (nrow(championship) == 1) championship$team_2_label[[1]] else "TBD",
+      if (nrow(championship) == 1) championship$winner_label[[1]] else "TBD"
+    ),
+    svg_bracket_connector(
+      semi_left$x + semi_left$width,
+      championship_box$x,
+      semi_left$y + (semi_left$height / 2),
+      semi_right$y + (semi_right$height / 2),
+      championship_box$y + (championship_box$height / 2)
+    ),
+    sprintf("<text x='910' y='685' fill='#64748b' font-size='10' font-weight='700' letter-spacing='1.4' text-anchor='middle'>CHAMPION</text>"),
+    svg_box(
+      champion_box$x,
+      champion_box$y,
+      champion_box$width,
+      champion_box$height,
+      if (nrow(championship) == 1) championship$winner_label[[1]] else "TBD",
+      stroke = "#94a3b8",
+      font_weight = 700
+    ),
+    svg_line(
+      championship_box$x + (championship_box$width / 2),
+      championship_box$y + championship_box$height,
+      champion_box$x + (champion_box$width / 2),
+      champion_box$y,
+      stroke = "#cbd5e1"
+    )
+  )
+
+  svg_markup <- paste0(
+    "<svg class='generated-bracket-svg' viewBox='0 0 1780 1080' preserveAspectRatio='xMidYMin meet' role='img' aria-label='Generated NCAA tournament bracket'>",
+    "<rect x='1' y='1' width='1778' height='1078' rx='14' ry='14' fill='#ffffff' stroke='#e2e8f0' />",
+    paste(c(left_top$elements, left_bottom$elements, right_top$elements, right_bottom$elements, center_elements), collapse = ""),
+    "</svg>"
+  )
+
+  div(
+    class = "generated-bracket-view",
+    div(
+      class = "generated-bracket-board generated-bracket-board-svg",
+      HTML(svg_markup)
+    )
+  )
+}
+
+render_static_region_bracket_ui <- function(bracket_display, region_code, region_name, side = "left") {
+  first_round <- bracket_display$first_round |>
+    filter(region == region_code) |>
+    arrange(game_index)
+  round_two <- bracket_display$round_two |>
+    filter(region == region_code) |>
+    arrange(game_index)
+  round_three <- bracket_display$round_three |>
+    filter(region == region_code) |>
+    arrange(game_index)
+  round_four <- bracket_display$round_four |>
+    filter(region == region_code) |>
+    arrange(game_index)
+
+  round_rows <- list(
+    team_top = c(2, 6, 10, 14, 18, 22, 26, 30),
+    team_bottom = c(4, 8, 12, 16, 20, 24, 28, 32),
+    r1 = c(3, 7, 11, 15, 19, 23, 27, 31),
+    r2 = c(5, 13, 21, 29),
+    r3 = c(9, 25),
+    r4 = c(17)
+  )
+
+  if (side == "left") {
+    box_cols <- c(first = 1, r1 = 3, r2 = 5, r3 = 7, r4 = 9)
+    connector_cols <- c(c01 = 2, c12 = 4, c23 = 6, c34 = 8)
+    connector_class <- "generated-connector-left"
+    header_cols <- c(first = 1, r1 = 3, r2 = 5, r3 = 7)
+  } else {
+    box_cols <- c(first = 9, r1 = 7, r2 = 5, r3 = 3, r4 = 1)
+    connector_cols <- c(c01 = 8, c12 = 6, c23 = 4, c34 = 2)
+    connector_class <- "generated-connector-right"
+    header_cols <- c(first = 9, r1 = 7, r2 = 5, r3 = 3)
+  }
+
+  box_ui <- function(label, grid_row, grid_col, extra_class = NULL) {
+    div(
+      class = paste("generated-bracket-box", extra_class),
+      style = paste0("grid-column:", grid_col, ";grid-row:", grid_row, ";"),
+      label
+    )
+  }
+
+  connector_ui <- function(grid_col, row_start, row_end) {
+    div(
+      class = paste("generated-connector", connector_class),
+      style = paste0("grid-column:", grid_col, ";grid-row:", row_start, " / ", row_end, ";")
+    )
+  }
+
+  first_round_nodes <- unlist(
+    lapply(seq_len(nrow(first_round)), function(i) {
+      list(
+        box_ui(first_round$top_label[[i]], round_rows$team_top[[i]], box_cols[["first"]], "generated-seed-box"),
+        box_ui(first_round$bottom_label[[i]], round_rows$team_bottom[[i]], box_cols[["first"]], "generated-seed-box"),
+        box_ui(first_round$winner_label[[i]], round_rows$r1[[i]], box_cols[["r1"]], "generated-winner-box"),
+        connector_ui(connector_cols[["c01"]], round_rows$team_top[[i]], round_rows$team_bottom[[i]])
+      )
+    }),
+    recursive = FALSE
+  )
+
+  round_two_nodes <- unlist(
+    lapply(seq_len(nrow(round_two)), function(i) {
+      list(
+        box_ui(round_two$winner_label[[i]], round_rows$r2[[i]], box_cols[["r2"]], "generated-winner-box"),
+        connector_ui(connector_cols[["c12"]], round_rows$r1[[2 * i - 1]], round_rows$r1[[2 * i]])
+      )
+    }),
+    recursive = FALSE
+  )
+
+  round_three_nodes <- unlist(
+    lapply(seq_len(nrow(round_three)), function(i) {
+      list(
+        box_ui(round_three$winner_label[[i]], round_rows$r3[[i]], box_cols[["r3"]], "generated-winner-box"),
+        connector_ui(connector_cols[["c23"]], round_rows$r2[[2 * i - 1]], round_rows$r2[[2 * i]])
+      )
+    }),
+    recursive = FALSE
+  )
+
+  round_four_nodes <- if (nrow(round_four) == 1) {
+    list(
+      box_ui(round_four$winner_label[[1]], round_rows$r4[[1]], box_cols[["r4"]], "generated-winner-box generated-region-champ"),
+      connector_ui(connector_cols[["c34"]], round_rows$r3[[1]], round_rows$r3[[2]])
+    )
+  } else {
+    list()
+  }
+
+  div(
+    class = paste("generated-region", side),
+    div(class = "generated-region-title", region_name),
+    div(
+      class = paste("generated-region-grid", side),
+      div(class = "generated-round-head", style = paste0("grid-column:", header_cols[["first"]], ";grid-row:1;"), "First Round"),
+      div(class = "generated-round-head", style = paste0("grid-column:", header_cols[["r1"]], ";grid-row:1;"), "Second Round"),
+      div(class = "generated-round-head", style = paste0("grid-column:", header_cols[["r2"]], ";grid-row:1;"), "Sweet 16"),
+      div(class = "generated-round-head", style = paste0("grid-column:", header_cols[["r3"]], ";grid-row:1;"), "Elite Eight"),
+      c(first_round_nodes, round_two_nodes, round_three_nodes, round_four_nodes)
+    )
+  )
+}
+
+render_static_final_four_ui <- function(bracket_display) {
+  normalize_label <- function(label) {
+    if (length(label) == 0 || is.na(label) || !nzchar(label)) "TBD" else label
+  }
+
+  matchup_box_ui <- function(team_1_label, team_2_label, winner_label = NA_character_, extra_class = NULL) {
+    team_1_label <- normalize_label(team_1_label)
+    team_2_label <- normalize_label(team_2_label)
+    winner_label <- normalize_label(winner_label)
+
+    div(
+      class = paste("generated-final-matchup", extra_class),
+      div(
+        class = paste("generated-final-team", if (identical(team_1_label, winner_label)) "is-winner"),
+        team_1_label
+      ),
+      div(
+        class = paste("generated-final-team", if (identical(team_2_label, winner_label)) "is-winner"),
+        team_2_label
+      )
+    )
+  }
+
+  region_champs <- bracket_display$round_four |>
+    arrange(region)
+  semifinals <- bracket_display$semifinals |>
+    arrange(Slot)
+  championship <- bracket_display$championship |>
+    slice(1)
+
+  w_champ <- region_champs |>
+    filter(region == "W") |>
+    pull(winner_label) |>
+    first()
+  x_champ <- region_champs |>
+    filter(region == "X") |>
+    pull(winner_label) |>
+    first()
+  y_champ <- region_champs |>
+    filter(region == "Y") |>
+    pull(winner_label) |>
+    first()
+  z_champ <- region_champs |>
+    filter(region == "Z") |>
+    pull(winner_label) |>
+    first()
+
+  semi_left_winner <- semifinals |>
+    filter(Slot == "R5WX") |>
+    pull(winner_label) |>
+    first()
+  semi_right_winner <- semifinals |>
+    filter(Slot == "R5YZ") |>
+    pull(winner_label) |>
+    first()
+  champion_label <- championship |>
+    pull(winner_label) |>
+    first() |>
+    normalize_label()
+
+  div(
+    class = "generated-final-four",
+    div(
+      class = "generated-final-grid",
+      div(class = "generated-round-head generated-final-head generated-final-head-left", "Semifinal"),
+      div(class = "generated-round-head generated-final-head generated-final-head-champ", "Championship"),
+      div(class = "generated-round-head generated-final-head generated-final-head-right", "Semifinal"),
+      div(
+        class = "generated-final-slot generated-final-slot-left",
+        matchup_box_ui(w_champ, x_champ, semi_left_winner, "generated-final-box-left")
+      ),
+      div(
+        class = "generated-final-slot generated-final-slot-right",
+        matchup_box_ui(y_champ, z_champ, semi_right_winner, "generated-final-box-right")
+      ),
+      div(class = "generated-final-connector generated-final-connector-left"),
+      div(class = "generated-final-connector generated-final-connector-right"),
+      div(
+        class = "generated-final-slot generated-final-slot-championship",
+        matchup_box_ui(semi_left_winner, semi_right_winner, champion_label, "generated-final-box-championship")
+      ),
+      div(class = "generated-final-connector generated-final-connector-down"),
+      div(class = "generated-championship-label", "Champion"),
+      div(class = "generated-bracket-box generated-champion-box generated-final-champion", champion_label)
+    )
+  )
+}
+
+interactive_matchup_picker_ui <- function(game_row, extra_class = NULL, read_only = FALSE) {
   input_id <- paste0("pick_", game_row$Slot[[1]])
   team_1_available <- !is.na(game_row$team_1[[1]])
   team_2_available <- !is.na(game_row$team_2[[1]])
@@ -1190,12 +2450,11 @@ interactive_matchup_picker_ui <- function(game_row, extra_class = NULL) {
   div(
     class = paste("bracket-team-box bracket-winner-box bracket-interactive-box", extra_class),
     if (matchup_ready) {
-      div(
-        class = "bracket-pick-options",
-        radioButtons(
-          inputId = input_id,
-          label = NULL,
-          choiceNames = list(
+      if (isTRUE(read_only)) {
+        div(
+          class = "bracket-pick-stack",
+          div(
+            class = "bracket-pick-options bracket-pick-options-static",
             pick_choice_ui(
               team_id = game_row$team_1[[1]],
               seed_value = game_row$team_1_seed[[1]],
@@ -1208,11 +2467,36 @@ interactive_matchup_picker_ui <- function(game_row, extra_class = NULL) {
               team_name = game_row$team_2_name[[1]],
               probability = game_row$team_2_probability[[1]]
             )
-          ),
-          choiceValues = as.character(c(game_row$team_1[[1]], game_row$team_2[[1]])),
-          selected = if (!is.na(selected_team_id)) as.character(selected_team_id) else character(0)
+          )
         )
-      )
+      } else {
+        div(
+          class = "bracket-pick-stack",
+          div(
+            class = "bracket-pick-options",
+            radioButtons(
+              inputId = input_id,
+              label = NULL,
+              choiceNames = list(
+                pick_choice_ui(
+                  team_id = game_row$team_1[[1]],
+                  seed_value = game_row$team_1_seed[[1]],
+                  team_name = game_row$team_1_name[[1]],
+                  probability = game_row$team_1_probability[[1]]
+                ),
+                pick_choice_ui(
+                  team_id = game_row$team_2[[1]],
+                  seed_value = game_row$team_2_seed[[1]],
+                  team_name = game_row$team_2_name[[1]],
+                  probability = game_row$team_2_probability[[1]]
+                )
+              ),
+              choiceValues = as.character(c(game_row$team_1[[1]], game_row$team_2[[1]])),
+              selected = if (!is.na(selected_team_id)) as.character(selected_team_id) else character(0)
+            )
+          )
+        )
+      }
     } else {
       tagList(
         div(class = "bracket-pick-round", game_row$round_label[[1]]),
@@ -1232,7 +2516,7 @@ interactive_matchup_picker_ui <- function(game_row, extra_class = NULL) {
   )
 }
 
-render_interactive_region_bracket_ui <- function(games, region_code, region_name, side = "left") {
+render_interactive_region_bracket_ui <- function(games, region_code, region_name, side = "left", read_only = FALSE) {
   round_rows <- list(
     r1 = c(1, 3, 5, 7, 9, 11, 13, 15),
     r2 = c(2, 6, 10, 14),
@@ -1268,7 +2552,7 @@ render_interactive_region_bracket_ui <- function(games, region_code, region_name
   picker_box_ui <- function(grid_row, grid_col, row, extra_class = NULL) {
     div(
       style = paste0("grid-column:", grid_col, ";grid-row:", grid_row, ";"),
-      interactive_matchup_picker_ui(row, extra_class = extra_class)
+      interactive_matchup_picker_ui(row, extra_class = extra_class, read_only = read_only)
     )
   }
 
@@ -1311,7 +2595,7 @@ render_interactive_region_bracket_ui <- function(games, region_code, region_name
   )
 }
 
-render_interactive_final_four_ui <- function(games) {
+render_interactive_final_four_ui <- function(games, read_only = FALSE) {
   semis <- games |>
     filter(Slot %in% c("R5WX", "R5YZ")) |>
     arrange(Slot)
@@ -1327,11 +2611,11 @@ render_interactive_final_four_ui <- function(games) {
       div(class = "round-title final-head final-head-right", "Final Four"),
       div(
         class = "center-box final-semi final-semi-left",
-        if (nrow(semis) >= 1) interactive_matchup_picker_ui(semis[1, ], extra_class = "center-pick-box")
+        if (nrow(semis) >= 1) interactive_matchup_picker_ui(semis[1, ], extra_class = "center-pick-box", read_only = read_only)
       ),
       div(
         class = "center-box final-semi final-semi-right",
-        if (nrow(semis) >= 2) interactive_matchup_picker_ui(semis[2, ], extra_class = "center-pick-box")
+        if (nrow(semis) >= 2) interactive_matchup_picker_ui(semis[2, ], extra_class = "center-pick-box", read_only = read_only)
       ),
       div(class = "final-connector final-connector-left"),
       div(class = "final-connector final-connector-right"),
@@ -1339,13 +2623,13 @@ render_interactive_final_four_ui <- function(games) {
       div(class = "championship-label", "Champion"),
       div(
         class = "final-champion",
-        if (nrow(championship) == 1) interactive_matchup_picker_ui(championship[1, ], extra_class = "center-pick-box")
+        if (nrow(championship) == 1) interactive_matchup_picker_ui(championship[1, ], extra_class = "center-pick-box", read_only = read_only)
       )
     )
   )
 }
 
-interactive_bracket_ui <- function(games, region_lookup_frame, season) {
+interactive_bracket_ui <- function(games, region_lookup_frame, season, read_only = FALSE) {
   region_names <- region_lookup_frame |>
     filter(season == !!season)
 
@@ -1355,17 +2639,17 @@ interactive_bracket_ui <- function(games, region_lookup_frame, season) {
       class = "bracket-shell",
       div(
         class = "bracket-side",
-        render_interactive_region_bracket_ui(games, "W", region_names$region_name[region_names$region == "W"][[1]], side = "left"),
-        render_interactive_region_bracket_ui(games, "X", region_names$region_name[region_names$region == "X"][[1]], side = "left")
+        render_interactive_region_bracket_ui(games, "W", region_names$region_name[region_names$region == "W"][[1]], side = "left", read_only = read_only),
+        render_interactive_region_bracket_ui(games, "X", region_names$region_name[region_names$region == "X"][[1]], side = "left", read_only = read_only)
       ),
       div(
         class = "bracket-center",
-        render_interactive_final_four_ui(games)
+        render_interactive_final_four_ui(games, read_only = read_only)
       ),
       div(
         class = "bracket-side",
-        render_interactive_region_bracket_ui(games, "Y", region_names$region_name[region_names$region == "Y"][[1]], side = "right"),
-        render_interactive_region_bracket_ui(games, "Z", region_names$region_name[region_names$region == "Z"][[1]], side = "right")
+        render_interactive_region_bracket_ui(games, "Y", region_names$region_name[region_names$region == "Y"][[1]], side = "right", read_only = read_only),
+        render_interactive_region_bracket_ui(games, "Z", region_names$region_name[region_names$region == "Z"][[1]], side = "right", read_only = read_only)
       )
     )
   )
@@ -1523,602 +2807,193 @@ if (length(available_prediction_years) == 0) {
 
 default_year <- if (2025 %in% available_prediction_years) 2025 else available_prediction_years[[1]]
 
+tab_stage_ui <- function(kicker, title, description, note_output_id, content, controls = NULL) {
+  div(
+    class = "tab-stage",
+    div(
+      class = "tab-stage-toolbar",
+      div(class = "tab-stage-note", textOutput(note_output_id)),
+      if (!is.null(controls)) div(class = "tab-stage-controls", controls)
+    ),
+    div(class = "tab-stage-content", content)
+  )
+}
+
 ui <- fluidPage(
+  class = "app-shell",
   tags$head(
-    tags$style(HTML("
-      body { background: #f6f4ec; color: #1f2933; }
-      .tabbable > .nav > li > a { background: #ebe5d6; color: #4a4032; border-radius: 10px 10px 0 0; }
-      .tabbable > .nav > li.active > a { background: #1f4d3a; color: #fff; }
-      .matchup-card {
-        background: #fffdf7;
-        border: 1px solid #d8d1bf;
-        border-radius: 14px;
-        padding: 14px;
-        margin-bottom: 14px;
-        box-shadow: 0 6px 18px rgba(31, 41, 51, 0.06);
-      }
-      .matchup-card-alert {
-        background: linear-gradient(180deg, #fff7f4 0%, #fffdf7 100%);
-      }
-      .matchup-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-      .matchup-subtitle { font-size: 13px; color: #6b7280; margin-bottom: 10px; }
-      .upset-alert-banner {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        background: linear-gradient(135deg, #c0392b 0%, #e67e22 100%);
-        color: #fff;
-        border-radius: 12px;
-        padding: 10px 12px;
-        margin: 8px 0 12px 0;
-      }
-      .upset-alert-kicker {
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        white-space: nowrap;
-      }
-      .upset-alert-text {
-        font-size: 12px;
-        font-weight: 600;
-        text-align: right;
-      }
-      .matchup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .matchup-side {
-        background: #f3efe4;
-        border-radius: 12px;
-        padding: 12px;
-        min-height: 92px;
-      }
-      .team-name { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
-      .team-prob { font-size: 22px; font-weight: 800; }
-      .section-note { margin: 12px 0 18px 0; color: #5f6c7b; }
-      .control-box {
-        background: #fffdf7;
-        border: 1px solid #d8d1bf;
-        border-radius: 14px;
-        padding: 14px;
-        margin-bottom: 16px;
-      }
-      .summary-header {
-        background: #fffdf7;
-        border: 1px solid #d8d1bf;
-        border-radius: 16px;
-        padding: 18px;
-        margin-bottom: 16px;
-      }
-      .summary-team-name {
-        font-size: 28px;
-        font-weight: 800;
-        margin-bottom: 6px;
-      }
-      .summary-meta {
-        color: #5f6c7b;
-        font-size: 14px;
-      }
-      .summary-stat-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-      .summary-stat-card {
-        background: #fffdf7;
-        border: 1px solid #d8d1bf;
-        border-radius: 14px;
-        padding: 14px;
-      }
-      .summary-stat-label {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #6b7280;
-        font-weight: 700;
-        margin-bottom: 8px;
-      }
-      .summary-stat-value {
-        font-size: 22px;
-        font-weight: 800;
-      }
-      .summary-stat-rank {
-        margin-top: 6px;
-        font-size: 12px;
-        color: #3f4c5a;
-        font-weight: 600;
-      }
-      .summary-section {
-        background: #fffdf7;
-        border: 1px solid #d8d1bf;
-        border-radius: 16px;
-        padding: 16px;
-        margin-bottom: 16px;
-      }
-      .summary-section-title {
-        font-size: 18px;
-        font-weight: 800;
-        margin-bottom: 12px;
-      }
-      .team-game-table th {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #6b7280;
-      }
-      .team-game-table td {
-        vertical-align: middle;
-      }
-      .bracket-shell {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 184px minmax(0, 1fr);
-        gap: 18px;
-        align-items: center;
-      }
-      .bracket-side {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-      .bracket-center {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 100%;
-      }
-      .region-bracket {
-        padding: 0;
-      }
-      .region-title {
-        font-size: 11px;
-        font-weight: 800;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: #355a80;
-      }
-      .region-bracket.right .region-title {
-        text-align: right;
-      }
-      .center-title {
-        text-align: center;
-      }
-      .region-grid {
-        display: grid;
-        grid-template-columns: minmax(88px, 1fr) 18px minmax(88px, 1fr) 18px minmax(88px, 1fr) 18px minmax(88px, 1fr);
-        grid-template-rows: 16px repeat(15, minmax(16px, auto));
-        column-gap: 0;
-        row-gap: 0;
-        align-items: center;
-      }
-      .round-head {
-        grid-row: 1;
-        text-align: center;
-      }
-      .round-head-r1 { grid-column: 1; }
-      .round-head-r2 { grid-column: 3; }
-      .round-head-r3 { grid-column: 5; }
-      .round-head-r4 { grid-column: 7; }
-      .final-four-bracket {
-        padding-top: 12px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        width: 100%;
-      }
-      .final-four-grid {
-        display: grid;
-        grid-template-columns: minmax(70px, 1fr) 14px minmax(84px, 1fr) 14px minmax(70px, 1fr);
-        grid-template-rows: 14px 34px 34px 10px 38px;
-        gap: 0;
-        align-items: center;
-        min-height: 100%;
-      }
-      .final-head {
-        grid-row: 1;
-        text-align: center;
-        font-size: 8px;
-        line-height: 1.15;
-      }
-      .final-head-left { grid-column: 1; }
-      .final-head-champ { grid-column: 3; }
-      .final-head-right { grid-column: 5; }
-      .championship-label {
-        grid-column: 3;
-        grid-row: 4;
-        text-align: center;
-        font-size: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #6b7280;
-        font-weight: 700;
-      }
-      .bracket-round {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .round-title {
-        font-size: 9px;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: #5f6c7a;
-        font-weight: 700;
-      }
-      .bracket-team-box {
-        background: #ffffff;
-        border: 1px solid #b9c0c8;
-        border-radius: 0;
-        padding: 1px 4px 2px 4px;
-        min-height: 22px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-      }
-      .bracket-winner-box {
-        border: 1px solid #b9c0c8;
-        box-shadow: none;
-      }
-      .first-round-top {
-        transform: translateY(5px);
-      }
-      .first-round-bottom {
-        transform: translateY(-5px);
-      }
-      .bracket-connector {
-        position: relative;
-        align-self: stretch;
-      }
-      .bracket-connector::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        width: 50%;
-        border-top: 1px solid #adb5bf;
-      }
-      .bracket-connector::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 1px;
-        background: #adb5bf;
-      }
-      .connector-left::before {
-        left: 50%;
-      }
-      .connector-left::after {
-        right: 50%;
-      }
-      .connector-right::before {
-        right: 50%;
-      }
-      .connector-right::after {
-        left: 50%;
-      }
-      .center-box {
-        min-height: 30px;
-      }
-      .final-semi {
-        grid-row: 2 / span 2;
-      }
-      .final-semi-left { grid-column: 1; }
-      .final-semi-right { grid-column: 5; }
-      .final-champion {
-        grid-column: 3;
-        grid-row: 5;
-        min-height: 38px;
-      }
-      .final-connector {
-        position: relative;
-        align-self: stretch;
-      }
-      .final-connector-left {
-        grid-column: 2;
-        grid-row: 2 / span 2;
-      }
-      .final-connector-right {
-        grid-column: 4;
-        grid-row: 2 / span 2;
-      }
-      .final-connector-left::before,
-      .final-connector-right::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        width: 50%;
-        border-top: 1px solid #adb5bf;
-      }
-      .final-connector-left::before { left: 0; }
-      .final-connector-right::before { right: 0; }
-      .final-connector-left::after,
-      .final-connector-right::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        bottom: 0;
-        width: 1px;
-        background: #adb5bf;
-      }
-      .final-connector-left::after { right: 0; }
-      .final-connector-right::after { left: 0; }
-      .final-connector-down {
-        grid-column: 3;
-        grid-row: 3 / 5;
-        justify-self: center;
-        width: 1px;
-        background: #adb5bf;
-      }
-      .champion-box {
-        background: #ffffff;
-        border: 1px solid #8f98a3;
-      }
-      .bracket-seed {
-        font-size: 7px;
-        color: #4d5863;
-        font-weight: 700;
-        margin-bottom: 0;
-      }
-      .bracket-team {
-        font-size: 8px;
-        font-weight: 600;
-        line-height: 1.05;
-      }
-      .bracket-actions {
-        margin-bottom: 10px;
-      }
-      .interactive-actions {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      .interactive-bracket-scroll {
-        overflow-x: auto;
-        overflow-y: visible;
-        padding-bottom: 6px;
-      }
-      .bracket-interactive-box {
-        padding: 2px 3px;
-        min-height: 20px;
-        overflow: hidden;
-        align-items: stretch;
-      }
-      .bracket-interactive-box.first-round-top {
-        transform: translateY(14px);
-      }
-      .bracket-interactive-box.first-round-bottom {
-        transform: translateY(-14px);
-      }
-      .bracket-pick-round {
-        font-size: 6px;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #6b7280;
-        margin-bottom: 1px;
-      }
-      .bracket-interactive-box .form-group,
-      .bracket-interactive-box .shiny-input-container {
-        margin-bottom: 0;
-      }
-      .bracket-pick-options {
-        width: 100%;
-        min-width: 0;
-        height: 100%;
-      }
-      .bracket-interactive-box .radio {
-        margin-top: 0;
-        margin-bottom: 0;
-        min-height: 0;
-        width: 100%;
-      }
-      .bracket-interactive-box .shiny-options-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0;
-        justify-content: center;
-        width: 100%;
-        min-width: 0;
-        height: 100%;
-      }
-      .bracket-interactive-box .radio label {
-        display: flex;
-        align-items: center;
-        padding: 0;
-        margin: 0;
-        font-weight: 600;
-        cursor: pointer;
-        line-height: 1;
-        width: 100%;
-        min-width: 0;
-        overflow: hidden;
-      }
-      .bracket-interactive-box .radio:last-child label {
-        margin-bottom: 0;
-      }
-      .bracket-interactive-box input[type='radio'] {
-        position: absolute;
-        opacity: 0;
-        pointer-events: none;
-        width: 0;
-        height: 0;
-        margin: 0;
-      }
-      .bracket-pick-choice {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        width: 100%;
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 8px;
-        padding: 0;
-        border: 1px solid transparent;
-        background: transparent;
-        pointer-events: none;
-      }
-      .bracket-pick-choice.is-selected {
-        background: #eef3f8;
-        border-color: #7f93aa;
-      }
-      .bracket-pick-prob {
-        min-width: 23px;
-        text-align: center;
-        border-radius: 999px;
-        padding: 1px 2px;
-        font-size: 6.5px;
-        font-weight: 800;
-        color: #1f2933;
-        flex: 0 0 auto;
-      }
-      .bracket-pick-team {
-        font-size: 6.5px;
-        line-height: 1;
-        font-weight: 600;
-        color: #111827;
-        flex: 1 1 auto;
-        min-width: 0;
-        white-space: normal;
-      }
-      .bracket-pending-box {
-        font-size: 7px;
-        line-height: 1;
-        color: #6b7280;
-        padding: 2px 3px;
-        background: #f7f4eb;
-        min-height: 14px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 1px;
-      }
-      .bracket-pending-team {
-        font-size: 6.5px;
-        line-height: 1;
-        font-weight: 600;
-        color: #111827;
-      }
-      .bracket-pending-note {
-        font-size: 6px;
-        line-height: 1;
-        color: #6b7280;
-      }
-      .interactive-game-selection {
-        margin-top: 8px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #1f4d3a;
-      }
-      @media (max-width: 1500px) {
-        .bracket-shell {
-          grid-template-columns: 1fr;
-        }
-      }
-    "))
+    tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
+    includeCSS("www/theme.css")
   ),
-  titlePanel("March Madness Matchup Probabilities"),
-  sidebarLayout(
-    sidebarPanel(
-      width = 3,
-      class = "control-box",
-      selectInput(
-        "division",
-        "Division",
-        choices = c("Mens" = "mens", "Womens" = "womens"),
-        selected = "mens"
-      ),
-      selectInput(
-        "season",
-        "Tournament season",
-        choices = available_prediction_years,
-        selected = default_year
-      ),
-      conditionalPanel(
-        condition = "input.main_tab == 'Team Summary'",
-        selectInput(
-          "team_summary_team",
-          "Team summary team",
-          choices = list()
+  div(
+    class = "container-fluid app-frame",
+    div(
+      class = "app-drawer",
+      tags$input(id = "control_drawer_toggle", type = "checkbox", class = "drawer-toggle"),
+      tags$label(
+        `for` = "control_drawer_toggle",
+        class = "drawer-button",
+        tags$span(class = "drawer-button-icon", HTML("&#9776;")),
+        tags$span(
+          class = "drawer-button-copy",
+          tags$span(class = "drawer-button-label", "Menu"),
+          tags$span(class = "drawer-button-meta", "Filters and export")
         )
       ),
-      downloadButton("export_jpg", "Export Current Tab JPG"),
-      helpText("Use 2025 now, then switch the pipeline and app to 2026 once the official bracket is announced.")
-    ),
-    mainPanel(
-      width = 9,
-      tabsetPanel(
-        id = "main_tab",
-        tabPanel(
-          "First Round",
-          br(),
-          div(class = "section-note", textOutput("first_round_note")),
-          uiOutput("first_round_cards")
-        ),
-        tabPanel(
-          "Custom Matchups",
-          br(),
+      tags$label(`for` = "control_drawer_toggle", class = "drawer-backdrop"),
+      div(
+        class = "drawer-panel",
+        div(
+          class = "drawer-panel-header",
           div(
-            class = "control-box",
-            fluidRow(
-              column(
-                width = 6,
-                selectInput("custom_region_a", "Team A region", choices = "All", selected = "All")
-              ),
-              column(
-                width = 6,
-                selectInput("custom_region_b", "Team B region", choices = "All", selected = "All")
+            class = "drawer-panel-copy",
+            div(class = "drawer-panel-kicker", "March Madness Models"),
+            div(class = "drawer-panel-title", "Controls")
+          ),
+          tags$label(`for` = "control_drawer_toggle", class = "drawer-close", "Close")
+        ),
+        div(
+          class = "sidebar-card drawer-card",
+          div(class = "sidebar-kicker", "Control Center"),
+          div(class = "sidebar-title", "Tournament filters"),
+          tags$p(
+            class = "sidebar-copy",
+            "Set the division, season, and team context here, then export the current view whenever you want a presentation-ready image."
+          ),
+          div(class = "control-section-title", "Core filters"),
+          selectInput(
+            "division",
+            "Division",
+            choices = c("Mens" = "mens", "Womens" = "womens"),
+            selected = "mens"
+          ),
+          selectInput(
+            "season",
+            "Tournament season",
+            choices = available_prediction_years,
+            selected = default_year
+          ),
+          conditionalPanel(
+            condition = "input.main_tab == 'Team Summary'",
+            div(
+              div(class = "control-section-title", "Team context"),
+              selectInput(
+                "team_summary_team",
+                "Team summary team",
+                choices = list()
               )
-            ),
-            fluidRow(
-              column(
-                width = 6,
-                selectInput("custom_team_a", "Team A", choices = list())
-              ),
-              column(
-                width = 6,
-                selectInput("custom_team_b", "Team B", choices = list())
-              )
-            ),
-            fluidRow(
-              column(width = 4, actionButton("add_matchup", "Add Matchup")),
-              column(width = 4, actionButton("clear_matchups", "Clear Matchups"))
             )
           ),
-          div(class = "section-note", textOutput("custom_note")),
-          uiOutput("custom_matchup_cards")
-        ),
-        tabPanel(
-          "Bracket Generator",
-          br(),
-          div(
-            class = "control-box bracket-actions",
-            actionButton("generate_bracket", "Generate Bracket")
-          ),
-          div(class = "section-note", textOutput("bracket_note")),
-          uiOutput("bracket_view")
-        ),
-        tabPanel(
-          "Fill Out Bracket",
-          br(),
-          div(
-            class = "control-box bracket-actions interactive-actions",
-            actionButton("clear_filled_bracket", "Clear Picks")
-          ),
-          div(class = "section-note", textOutput("fill_bracket_note")),
-          uiOutput("fill_bracket_view")
-        ),
-        tabPanel(
-          "Simulation Probabilities",
-          br(),
-          div(class = "section-note", textOutput("simulation_note")),
-          uiOutput("simulation_probabilities_view")
-        ),
-        tabPanel(
-          "Team Summary",
-          br(),
-          div(class = "section-note", textOutput("team_summary_note")),
-          uiOutput("team_summary_view")
+          div(class = "control-section-title", "Export"),
+          downloadButton("export_jpg", "Export Current Tab JPG", class = "download-cta"),
+          helpText("Use 2025 now, then switch the pipeline and app to 2026 once the official bracket is announced.")
+        )
+      )
+    ),
+    div(
+      class = "app-workspace",
+      div(
+        class = "content-shell",
+        div(
+          class = "content-card main-tabset",
+          tabsetPanel(
+            id = "main_tab",
+            tabPanel(
+              "First Round",
+              tab_stage_ui(
+                kicker = "Opening slate",
+                title = "First-round matchup probabilities",
+                description = "Scan every opening game in a card-driven layout that highlights likely winners, upset pressure points, and historical lower-seed context at a glance.",
+                note_output_id = "first_round_note",
+                content = uiOutput("first_round_cards")
+              )
+            ),
+            tabPanel(
+              "Custom Matchups",
+              tab_stage_ui(
+                kicker = "Scenario builder",
+                title = "Build custom head-to-head comparisons",
+                description = "Filter the tournament field by region, compare any two seeded teams, and stack your own what-if board for side-by-side probability reads.",
+                note_output_id = "custom_note",
+                controls = div(
+                  class = "control-box",
+                  fluidRow(
+                    column(
+                      width = 6,
+                      selectInput("custom_region_a", "Team A region", choices = "All", selected = "All")
+                    ),
+                    column(
+                      width = 6,
+                      selectInput("custom_region_b", "Team B region", choices = "All", selected = "All")
+                    )
+                  ),
+                  fluidRow(
+                    column(
+                      width = 6,
+                      selectInput("custom_team_a", "Team A", choices = list())
+                    ),
+                    column(
+                      width = 6,
+                      selectInput("custom_team_b", "Team B", choices = list())
+                    )
+                  ),
+                  fluidRow(
+                    column(width = 4, actionButton("add_matchup", "Add Matchup", class = "action-cta")),
+                    column(width = 4, actionButton("clear_matchups", "Clear Matchups", class = "secondary-cta"))
+                  )
+                ),
+                content = uiOutput("custom_matchup_cards")
+              )
+            ),
+            tabPanel(
+              "Bracket Generator",
+              tab_stage_ui(
+                kicker = "Simulation draw",
+                title = "Generate a saved simulated bracket",
+                description = "Pull a complete bracket from the simulation pool and review the field in a cleaner bracket canvas with a more premium presentation.",
+                note_output_id = "bracket_note",
+                controls = div(
+                  class = "control-box interactive-actions",
+                  actionButton("generate_bracket", "Generate Bracket", class = "action-cta")
+                ),
+                content = uiOutput("bracket_view")
+              )
+            ),
+            tabPanel(
+              "Fill Out Bracket",
+              tab_stage_ui(
+                kicker = "Interactive picks",
+                title = "Fill out the bracket with cascading selections",
+                description = "Choose winners one game at a time, watch each pick advance automatically, and use the refreshed bracket UI to keep the path easy to read.",
+                note_output_id = "fill_bracket_note",
+                controls = div(
+                  class = "control-box interactive-actions",
+                  actionButton("clear_filled_bracket", "Clear Picks", class = "secondary-cta")
+                ),
+                content = uiOutput("fill_bracket_view")
+              )
+            ),
+            tabPanel(
+              "Simulation Probabilities",
+              tab_stage_ui(
+                kicker = "Round advancement",
+                title = "Track how often each team survives each round",
+                description = "Review the saved simulation outputs in a wider, calmer table treatment designed for fast comparison across the entire tournament field.",
+                note_output_id = "simulation_note",
+                content = uiOutput("simulation_probabilities_view")
+              )
+            ),
+            tabPanel(
+              "Team Summary",
+              tab_stage_ui(
+                kicker = "Team dossier",
+                title = "Deep dive into a single team's season profile",
+                description = "Inspect efficiency-style metrics, percentile indicators, and the best and worst results on the schedule in a more editorial team-summary layout.",
+                note_output_id = "team_summary_note",
+                content = uiOutput("team_summary_view")
+              )
+            )
+          )
         )
       )
     )
@@ -2172,6 +3047,10 @@ server <- function(input, output, session) {
 
   region_lookup <- reactive({
     load_region_lookup(input$division)
+  })
+
+  tournament_slots <- reactive({
+    load_tournament_slots(input$division)
   })
 
   historical_seed_rates <- reactive({
@@ -2304,6 +3183,36 @@ server <- function(input, output, session) {
     )
   })
 
+  generated_bracket_games <- reactive({
+    if (nrow(generated_bracket()) == 0) {
+      return(tibble())
+    }
+
+    build_saved_bracket_games_app(
+      seed_table = bracket_seed_table(),
+      bracket_results = generated_bracket(),
+      slots_frame = tournament_slots(),
+      season = as.integer(input$season)
+    )
+  })
+
+  generated_bracket_display <- reactive({
+    if (nrow(generated_bracket()) == 0) {
+      return(NULL)
+    }
+
+    build_saved_bracket_display_app(
+      seed_table = bracket_seed_table(),
+      bracket_results = generated_bracket(),
+      slots_frame = tournament_slots(),
+      season = as.integer(input$season)
+    )
+  })
+
+  filled_bracket_display <- reactive({
+    build_bracket_display_from_games_app(filled_bracket_games())
+  })
+
   observeEvent(input$clear_matchups, {
     custom_matchups(tibble())
   })
@@ -2333,20 +3242,7 @@ server <- function(input, output, session) {
     selected_bracket <- sample(available_bracket_ids(), size = 1)
 
     bracket_frame <- bracket_pool() |>
-      filter(Bracket == selected_bracket) |>
-      left_join(team_lookup(), by = "team_id") |>
-      left_join(
-        seed_data() |>
-          filter(season == as.integer(input$season)) |>
-          transmute(team_id, seed_num, region, Team = seed_raw),
-        by = c("team_id", "Team")
-      ) |>
-      left_join(
-        region_lookup() |>
-          filter(season == as.integer(input$season)) |>
-          select(region, region_name),
-        by = "region"
-      )
+      filter(Bracket == selected_bracket)
 
     generated_bracket(bracket_frame)
   })
@@ -2476,7 +3372,7 @@ server <- function(input, output, session) {
     if (any(first_round_games()$matchup_status == "Play-in pending")) {
       "Play-in slots are marked as pending. Once those teams are set, you can add the final matchup in the custom tab."
     } else if (any(first_round_games()$upset_watch)) {
-      "Favored teams are shaded green on a 0.5-to-1 scale. Each card shows the historical lower-seed win rate for that seed matchup, and upset alerts appear when the lower seed win probability is above that historical average."
+      "Favored teams are shaded green on a 0.5-to-1 scale. Each card also shows the historical lower-seed win rate for that seed matchup. Upset alerts appear when the lower seed win probability is above that historical average."
     } else {
       "Favored teams are shaded green on a 0.5-to-1 scale. Each card also shows the historical lower-seed win rate for that seed matchup."
     }
@@ -2502,7 +3398,7 @@ server <- function(input, output, session) {
       )
     })
 
-    tagList(cards)
+    div(class = "matchup-card-grid", cards)
   })
 
   output$custom_note <- renderText({
@@ -2510,7 +3406,7 @@ server <- function(input, output, session) {
       return("Run the saved predictions for this season first, then you can add custom matchups here.")
     }
 
-    "Filter teams by region, choose a matchup, and add it to the list below. Only the favored team is shaded green."
+    "Filter teams by region, choose a matchup, and add it to the list below. Each card includes win probability."
   })
 
   output$custom_matchup_cards <- renderUI({
@@ -2529,7 +3425,7 @@ server <- function(input, output, session) {
       )
     })
 
-    tagList(cards)
+    div(class = "matchup-card-grid", cards)
   })
 
   output$bracket_note <- renderText({
@@ -2549,7 +3445,7 @@ server <- function(input, output, session) {
       return("No saved prediction file is available for that season and division yet. Run the pipeline for that tournament year first.")
     }
 
-    "Pick winners game by game. Each team shows its win probability for the current matchup, and your pick advances automatically to the next round."
+    "Pick winners game by game. Each matchup shows win probability, and your pick advances automatically to the next round."
   })
 
   output$simulation_note <- renderText({
@@ -2584,49 +3480,10 @@ server <- function(input, output, session) {
   })
 
   output$bracket_view <- renderUI({
-    if (nrow(generated_bracket()) == 0) {
-      return(div(class = "section-note", "No bracket generated yet."))
-    }
-
-    region_names <- filter(region_lookup(), season == as.integer(input$season))
-    bracket_data <- generated_bracket()
-
-    div(
-      class = "bracket-shell",
-      div(
-        class = "bracket-side",
-        render_region_bracket_ui(
-          bracket_data = bracket_data,
-          region_code = "W",
-          region_name = region_names$region_name[region_names$region == "W"][[1]],
-          side = "left"
-        ),
-        render_region_bracket_ui(
-          bracket_data = bracket_data,
-          region_code = "X",
-          region_name = region_names$region_name[region_names$region == "X"][[1]],
-          side = "left"
-        )
-      ),
-      div(
-        class = "bracket-center",
-        render_final_four_ui(bracket_data)
-      ),
-      div(
-        class = "bracket-side",
-        render_region_bracket_ui(
-          bracket_data = bracket_data,
-          region_code = "Y",
-          region_name = region_names$region_name[region_names$region == "Y"][[1]],
-          side = "right"
-        ),
-        render_region_bracket_ui(
-          bracket_data = bracket_data,
-          region_code = "Z",
-          region_name = region_names$region_name[region_names$region == "Z"][[1]],
-          side = "right"
-        )
-      )
+    build_generated_bracket_page_ui(
+      bracket_games = generated_bracket_games(),
+      region_lookup_frame = region_lookup(),
+      season = as.integer(input$season)
     )
   })
 
@@ -2695,37 +3552,21 @@ server <- function(input, output, session) {
           title = paste("First Round Matchups -", tools::toTitleCase(input$division), input$season)
         )
       } else if (identical(input$main_tab, "Bracket Generator")) {
-        export_data <- generated_bracket() |>
-          transmute(
-            matchup_label = Slot,
-            team_a = Team,
-            team_b = team_name,
-            team_a_win_probability = NA_real_,
-            team_b_win_probability = NA_real_,
-            matchup_status = "Bracket slot",
-            upset_watch = FALSE
-          )
-
-        export_matchups_jpg(
-          export_data,
+        export_bracket_jpg(
+          bracket_display = generated_bracket_display(),
+          region_lookup_frame = region_lookup(),
           file = file,
+          bracket_games = generated_bracket_games(),
+          season = as.integer(input$season),
           title = paste("Generated Bracket -", tools::toTitleCase(input$division), input$season)
         )
       } else if (identical(input$main_tab, "Fill Out Bracket")) {
-        export_data <- filled_bracket_games() |>
-          transmute(
-            matchup_label = paste(round_label, display_region),
-            team_a = if_else(is.na(team_1_name), "TBD", paste(team_1_seed, team_1_name)),
-            team_b = if_else(is.na(team_2_name), "TBD", paste(team_2_seed, team_2_name)),
-            team_a_win_probability = team_1_probability,
-            team_b_win_probability = team_2_probability,
-            matchup_status = if_else(is.na(selected_team_name), "Awaiting pick", paste("Picked", selected_team_name)),
-            upset_watch = FALSE
-          )
-
-        export_matchups_jpg(
-          export_data,
+        export_bracket_jpg(
+          bracket_display = filled_bracket_display(),
+          region_lookup_frame = region_lookup(),
           file = file,
+          bracket_games = filled_bracket_games(),
+          season = as.integer(input$season),
           title = paste("Fill Out Bracket -", tools::toTitleCase(input$division), input$season)
         )
       } else {

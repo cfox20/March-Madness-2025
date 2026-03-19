@@ -7,7 +7,7 @@ library("janitor")
 
 # Set Path ----------------------------------------------------------------
 
-data_path <- here("data")
+data_path <- here(INPUT_DIR)
 
 
 
@@ -146,40 +146,6 @@ m_team_rankings <- read_csv(here(data_path, "MMasseyOrdinals.csv")) |>
     ,"POM"
   )) |>
   pivot_wider(names_from = system_name, values_from = ordinal_rank)
-
-
-# Evan Miyakawa Data ------------------------------------------------------
-
-# Code to get data from evanmiya.com attached to correct team_id
-team_ref <- read_csv("data//name_corrections2.csv", col_types = "ff") |>
-  as.matrix() |>
-  as_tibble()
-
-# em_team_ranks |> mutate(space = str_detect(team, "\\s")) |> filter(space == FALSE) |>  view()
-
-files <- list.files(here(data_path, "evan_miya"), full.names = TRUE)
-
-
-em_team_ranks <- map_dfr(files, ~ read_csv(.x) |>
-                                  mutate(season = str_extract(.x, "\\d\\d-\\d\\d") |> str_replace("\\d\\d-", "20"))) |>
-  select(-c("wins", "losses", "color_O", "color_D", "color_Diff",
-            "runs_per_game", "runs_conceded_per_game", "runs_conceded_total", "runs_total")) |>
-  mutate(team = str_to_lower(team),
-         team = str_replace(team, " state", " st"),
-         team = str_replace(team, "saint", "st"),
-  ) |>
-  left_join(team_ref, by = c("team" = "em")) |>
-  mutate(team = coalesce(kaggle, team)) |>
-  select(-kaggle)
-
-write_csv(em_team_ranks, "data/em_team_ranks.csv")
-
-left_join(em_team_ranks, mutate(m_teams, team = str_to_lower(team_name)), by = "team") |>
-  select(-c(team_name, first_d1season, last_d1season)) |>
-  relocate(team_id, season) |>
-  write_csv("data//em_team_data.csv")
-
-em_ranks <- read_csv(here(data_path, "em_team_data.csv"))
 
 
 

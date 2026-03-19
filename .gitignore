@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.r_libs/
 
 # Keep the app's deployed data in Git for Connect Cloud, but ignore
 # pipeline/training artifacts that the hosted dashboard does not need.
