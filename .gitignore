@@ -11,11 +11,13 @@ data/*
 data/1_input_data/*
 !data/1_input_data/MNCAATourneyCompactResults.csv
 !data/1_input_data/MNCAATourneySeeds.csv
+!data/1_input_data/MNCAATourneySlots.csv
 !data/1_input_data/MRegularSeasonDetailedResults.csv
 !data/1_input_data/MSeasons.csv
 !data/1_input_data/MTeams.csv
 !data/1_input_data/WNCAATourneyCompactResults.csv
 !data/1_input_data/WNCAATourneySeeds.csv
+!data/1_input_data/WNCAATourneySlots.csv
 !data/1_input_data/WRegularSeasonDetailedResults.csv
 !data/1_input_data/WSeasons.csv
 !data/1_input_data/WTeams.csv
